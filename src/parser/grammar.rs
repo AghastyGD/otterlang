@@ -1,7 +1,7 @@
 use chumsky::prelude::*;
 use chumsky::Stream;
 
-use crate::ast::nodes::{BinaryOp, Expr, Function, Literal, Program, Statement, Block, Param, UnaryOp};
+use crate::ast::nodes::{BinaryOp, Expr, Function, Literal, Program, Statement, Block, Param, UnaryOp, FStringPart};
 use crate::lexer::token::{Span, Token, TokenKind};
 use crate::utils::errors::{Diagnostic, DiagnosticSeverity};
 
@@ -60,15 +60,96 @@ fn identifier_parser() -> impl Parser<TokenKind, String, Error = Simple<TokenKin
     select! { TokenKind::Identifier(name) => name }
 }
 
+fn parse_fstring(content: String) -> Expr {
+    // Parse f-string by splitting on braces and parsing expressions
+    let mut parts = Vec::new();
+    let mut current_text = String::new();
+    let mut chars = content.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '{' => {
+                if let Some(&'{') = chars.peek() {
+                    // Escaped {{
+                    chars.next();
+                    current_text.push('{');
+                } else {
+                    // Expression start
+                    if !current_text.is_empty() {
+                        parts.push(FStringPart::Text(current_text));
+                        current_text = String::new();
+                    }
+
+                    // Parse expression until }
+                    let mut expr_content = String::new();
+                    while let Some(ch) = chars.next() {
+                        if ch == '}' {
+                            break;
+                        }
+                        expr_content.push(ch);
+                    }
+
+                    if !expr_content.is_empty() {
+                        // Parse the expression content
+                        // For now, simple identifier parsing
+                        let trimmed = expr_content.trim();
+                        if !trimmed.is_empty() {
+                            parts.push(FStringPart::Expr(Box::new(Expr::Identifier(trimmed.to_string()))));
+                        }
+                    }
+                }
+            }
+            '}' => {
+                if let Some(&'}') = chars.peek() {
+                    // Escaped }}
+                    chars.next();
+                    current_text.push('}');
+                } else {
+                    current_text.push('}');
+                }
+            }
+            _ => current_text.push(ch),
+        }
+    }
+
+    // Add remaining text
+    if !current_text.is_empty() {
+        parts.push(FStringPart::Text(current_text));
+    }
+
+    // If no expressions found, treat as regular string
+    if parts.iter().all(|part| matches!(part, FStringPart::Text(_))) {
+        if let Some(FStringPart::Text(text)) = parts.first() {
+            return Expr::Literal(Literal::String(text.clone()));
+        }
+    }
+
+    Expr::FString { parts }
+}
+
 fn literal_expr_parser() -> impl Parser<TokenKind, Expr, Error = Simple<TokenKind>> {
     let string_lit =
         select! { TokenKind::StringLiteral(value) => Expr::Literal(Literal::String(value)) };
-    let number_lit = select! { TokenKind::Number(value) => Expr::Literal(Literal::Number(value.parse().unwrap_or_default())) };
+    let number_lit = select! { TokenKind::Number(value) => {
+        // Remove underscores from the number
+        let clean_value = value.replace('_', "");
+        // Check if it contains a decimal point or is an integer
+        if clean_value.contains('.') {
+            Expr::Literal(Literal::Number(clean_value.parse().unwrap_or_default()))
+        } else {
+            // Parse as integer
+            match clean_value.parse::<i64>() {
+                Ok(int_val) => Expr::Literal(Literal::Number(int_val as f64)), // Store as float for now
+                Err(_) => Expr::Literal(Literal::Number(0.0)), // fallback
+            }
+        }
+    }};
     let bool_lit = select! {
         TokenKind::True => Expr::Literal(Literal::Bool(true)),
         TokenKind::False => Expr::Literal(Literal::Bool(false)),
     };
-    choice((string_lit, number_lit, bool_lit))
+    let fstring_lit = select! { TokenKind::FString(content) => parse_fstring(content) };
+    choice((fstring_lit, string_lit, number_lit, bool_lit))
 }
 
 fn expr_parser() -> impl Parser<TokenKind, Expr, Error = Simple<TokenKind>> {
@@ -260,13 +341,13 @@ fn program_parser() -> impl Parser<TokenKind, Program, Error = Simple<TokenKind>
         });
 
     let use_stmt = just(TokenKind::Use)
-        .ignore_then(expr.clone()) // For now, simplified - should parse module paths
-        .map(|module| Statement::Use {
-            module: match module {
-                Expr::Literal(Literal::String(s)) => s,
-                _ => "unknown".to_string(),
-            },
-            alias: None,
+        .ignore_then(identifier_parser())
+        .then_ignore(just(TokenKind::Colon))
+        .then(identifier_parser())
+        .then(just(TokenKind::As).ignore_then(identifier_parser()).or_not())
+        .map(|((namespace, module), alias)| Statement::Use {
+            module: format!("{}:{}", namespace, module),
+            alias,
         });
 
     let break_stmt = just(TokenKind::Break).map(|_| Statement::Break);

@@ -1,5 +1,4 @@
 use std::fmt;
-use crate::ast::nodes::FStringPart;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
@@ -60,9 +59,7 @@ pub enum TokenKind {
     // Literals
     Number(String),
     StringLiteral(String),
-    FString {
-        parts: Vec<FStringPart>,
-    },
+    FString(String), // Raw f-string content like "π ≈ {result}"
     Bool(bool),
 
     // Structural
@@ -201,7 +198,7 @@ impl fmt::Debug for TokenKind {
             TokenKind::UnicodeIdentifier(name) => write!(f, "UnicodeIdentifier({name})"),
             TokenKind::Number(number) => write!(f, "Number({number})"),
             TokenKind::StringLiteral(value) => write!(f, "StringLiteral(\"{value}\")"),
-            TokenKind::FString { parts } => write!(f, "FString({} parts)", parts.len()),
+            TokenKind::FString(content) => write!(f, "FString(\"{}\")", content),
             TokenKind::Bool(value) => write!(f, "Bool({value})"),
             kind => f.write_str(kind.name()),
         }

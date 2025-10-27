@@ -1,5 +1,4 @@
 use super::token::{Span, Token, TokenKind};
-use crate::ast::nodes::FStringPart;
 use crate::utils::errors::{Diagnostic, DiagnosticSeverity};
 use thiserror::Error;
 
@@ -383,66 +382,62 @@ pub fn tokenize(source: &str) -> LexResult<Vec<Token>> {
                     ));
                     i += 1;
                 }
+                b'f' => {
+                    // Check if this is followed by a quote (f-string)
+                    if i + 1 < line_without_newline.len() && line_without_newline.as_bytes()[i + 1] == b'"' {
+                        let start = i;
+                        i += 2; // Skip f"
+                        let mut value = String::new();
+
+                        // Parse until closing "
+                        while i < line_without_newline.len() && line_without_newline.as_bytes()[i] != b'"' {
+                            value.push(line_without_newline.as_bytes()[i] as char);
+                            i += 1;
+                        }
+
+                        let span = Span::new(line_offset + start, line_offset + i + 1);
+                        tokens.push(Token::new(
+                            TokenKind::FString(value),
+                            span,
+                        ));
+                        i += 1;
+                    } else {
+                        // Regular identifier starting with 'f'
+                        let start = i;
+                        i += 1;
+                        while i < line_without_newline.len()
+                            && (line_without_newline.as_bytes()[i].is_ascii_alphanumeric()
+                                || line_without_newline.as_bytes()[i] == b'_')
+                        {
+                            i += 1;
+                        }
+                        let value = &line_without_newline[start..i];
+                        let span = Span::new(line_offset + start, line_offset + i);
+                        let kind = match value {
+                            "fn" => TokenKind::Fn,
+                            "for" => TokenKind::For,
+                            "false" => TokenKind::False,
+                            _ => TokenKind::Identifier(value.to_string()),
+                        };
+                        tokens.push(Token::new(kind, span));
+                    }
+                }
                 b'"' => {
                     let start = i;
                     i += 1;
                     let mut value = String::new();
-                    let mut is_fstring = false;
-                    let mut parts = Vec::new();
 
+                    // Regular string (f-strings are handled by the 'f' case above)
                     while i < line_without_newline.len() && line_without_newline.as_bytes()[i] != b'"' {
-                        if line_without_newline.as_bytes()[i] == b'{' {
-                            // Check if this is an f-string
-                            if i + 1 < line_without_newline.len() && line_without_newline.as_bytes()[i + 1] != b'{' {
-                                if !is_fstring {
-                                    is_fstring = true;
-                                    parts.push(FStringPart::Text(value.clone()));
-                                    value.clear();
-                                }
-                                // TODO: Parse expression inside braces
-                                // For now, just treat as text
-                                value.push('{');
-                                i += 1;
-                            } else {
-                                value.push('{');
-                                i += 1;
-                            }
-                        } else if line_without_newline.as_bytes()[i] == b'}' && is_fstring {
-                            value.push('}');
-                            i += 1;
-                        } else {
-                            value.push(line_without_newline.as_bytes()[i] as char);
-                            i += 1;
-                        }
+                        value.push(line_without_newline.as_bytes()[i] as char);
+                        i += 1;
                     }
 
-                    if i >= line_without_newline.len() {
-                        let span = Span::new(
-                            line_offset + start,
-                            line_offset + line_without_newline.len(),
-                        );
-                        errors.push(LexerError::UnterminatedString {
-                            line: line_number,
-                            column: column_index,
-                            span,
-                        });
-                        break;
-                    }
-
-                    if is_fstring {
-                        parts.push(FStringPart::Text(value));
-                        let span = Span::new(line_offset + start, line_offset + i + 1);
-                        tokens.push(Token::new(
-                            TokenKind::FString { parts },
-                            span,
-                        ));
-                    } else {
-                        let span = Span::new(line_offset + start, line_offset + i + 1);
-                        tokens.push(Token::new(
-                            TokenKind::StringLiteral(value),
-                            span,
-                        ));
-                    }
+                    let span = Span::new(line_offset + start, line_offset + i + 1);
+                    tokens.push(Token::new(
+                        TokenKind::StringLiteral(value),
+                        span,
+                    ));
                     i += 1;
                 }
                 ch if ch.is_ascii_digit() => {

@@ -1,161 +1,103 @@
-# OtterLang v0.3: Core Language Milestone 🦦
+# OtterLang Development Progress
 
-## ✅ Completed Features
+This document outlines the features implemented and tested for OtterLang, moving it from a prototype towards a full-featured language.
 
-### 1. Function Parameters with Types and Return Values ✓
-- Full support for typed function parameters: `fn add(x: float, y: float) -> float`
-- Return type annotations: `-> float`, `-> int`, `-> bool`
-- Type inference from function signatures
-- Proper LLVM function type generation
-- Parameter passing and stack allocation
+## ✅ Completed Features:
 
-### 2. Return Statements with Values ✓
-- `return expr` statements fully functional
-- Proper type checking of return values
-- LLVM return instruction generation
+1.  **Fixed Print Functionality**
+    *   Resolved the issue where `Statement::Expr` was incorrectly assuming all expressions were print calls.
+    *   Created a runtime C shim for FFI functions (`std.io.print`, `std.io.println`, `std.time.now`) to ensure proper linking.
+    *   Print statements now work correctly, outputting string literals.
 
-### 3. Compound Assignment Operators ✓
-- `+=`, `-=`, `*=`, `/=` operators
-- Desugared to regular assignments in parser
-- Works with all numeric types
+2.  **Implemented Let Statements**
+    *   Support for variable declarations using `let name = expr`.
+    *   Proper type inference and storage allocation for variables.
+    *   Variables are stored in the function context and are accessible throughout their scope.
 
-### 4. If/Else Control Flow ✓
-- Full if/else statement support with proper branching
-- Boolean condition evaluation
-- LLVM conditional branch instructions
-- Merge blocks for control flow continuation
+3.  **Implemented For Loops with Ranges**
+    *   Full support for `for var in start..end:` syntax.
+    *   Parsing of range expressions (`0..10`).
+    *   LLVM codegen with correct loop headers, bodies, and increment logic.
+    *   Fixed tokenizer to correctly distinguish the `..` operator from decimal points in numbers.
+    *   Supports both integer (`i64`) and floating-point (`f64`) ranges, with automatic type coercion to `f64` when mixed.
 
-### 5. For Loops with Ranges ✓
-- `for var in start..end:` syntax
-- Support for both int and float ranges
-- Automatic type coercion (int↔float)
-- Proper loop headers, bodies, and increment logic
+4.  **Implemented Comparison Operators**
+    *   Support for all comparison operators: `==`, `!=`, `<`, `>`, `<=`, `>=`.
+    *   Generates appropriate LLVM float comparison instructions.
+    *   Also implemented the modulo operator (`%`) using LLVM's `frem` instruction.
+    *   Comparison operations correctly return boolean values.
 
-### 6. Comparison Operators ✓
-- All comparison operators: `==`, `!=`, `<`, `>`, `<=`, `>=`
-- Returns boolean values
-- Float comparison with proper predicates
+5.  **Implemented Function Parameters with Types and Return Values**
+    *   Parser now handles typed function parameters (e.g., `fn func(param: int)`).
+    *   Supports explicit return types for functions (e.g., `-> float`).
+    *   LLVM codegen correctly sets up function signatures with parameter and return types.
+    *   Implemented `return expr` statements, allowing functions to return computed values.
+    *   Includes default return values for non-void functions if no explicit return is encountered.
+    *   Automatic type coercion between `int` and `float` when calling functions.
 
-### 7. Unary Operations ✓
-- Negation operator: `-expr`
-- Logical not: `!expr`
-- Proper type checking
+6.  **Implemented Compound Assignment Operators**
+    *   Parser now desugars compound assignments (`+=`, `-=`, `*=`, `/=`) into their equivalent binary operation and assignment (e.g., `x += y` becomes `x = x + y`).
 
-### 8. Variable Declarations ✓
-- `let` statements with type inference
-- Stack-allocated local variables
-- Proper scope management
+7.  **Implemented If/Else Control Flow**
+    *   Full support for `if cond: ... else: ...` statements.
+    *   LLVM codegen generates proper conditional branching and merge blocks.
+    *   Ensures conditions evaluate to boolean types.
 
-### 9. Mixed Type Arithmetic ✓
-- Automatic int-to-float coercion in binary operations
-- Seamless mixing of int and float types
+8.  **Implemented Unary Negation and Logical NOT**
+    *   Support for `-expr` (float negation) and `!expr` (boolean logical NOT).
+    *   Generates corresponding LLVM instructions (`fneg`, `not`).
 
-## 🚀 Working Examples
+9.  **Implemented F-String Interpolation (Basic)**
+    *   Tokenizer correctly identifies f-strings (`f"..."`) separate from regular strings.
+    *   Parser extracts interpolated expressions from f-strings (`{varname}`).
+    *   Codegen converts variables to string representations at compile time (constants only).
+    *   ⚠️ Note: F-string interpolation is limited - only works for identifiers, no runtime formatting yet.
 
-###pi_simple.otter - Pi Calculation (Leibniz Formula)
-```otter
-fn leibniz_pi(iterations: float) -> float:
-    let pi = 0.0
-    let sign = 1.0
-    for n in 0..iterations:
-        let term = sign / (2.0 * n + 1.0)
-        pi += term
-        sign = -sign
-    return 4.0 * pi
+10. **Implemented Module Imports**
+    *   Support for `use namespace:module` syntax (e.g., `use otter:time`).
+    *   Parser correctly handles module import statements with optional aliases.
+    *   Module resolution is handled at expression evaluation level.
 
-fn main():
-    print("Starting pi calculation...")
-    let iterations = 1000.0
-    let result = leibniz_pi(iterations)
-    print("Pi calculation complete!")
-```
+11. **Implemented Member Access for Module Functions**
+    *   Full support for `module.function()` syntax (e.g., `time.now()`).
+    *   Parser correctly creates `Expr::Member` nodes for dot notation.
+    *   Codegen resolves module functions through symbol registry.
+    *   Special handling for `time.now()` with automatic type conversion from `i64` milliseconds to `f64`.
+    *   Added C runtime implementation of `otter_std_time_now_ms()` for cross-platform compatibility.
 
-This demonstrates:
-- Typed function parameters and return values
-- Floating-point arithmetic
-- For loops with ranges
-- Compound assignment (`+=`)
-- Unary negation (`-sign`)
-- Return statements with values
+12. **Forward Declaration of Functions**
+    *   Functions are now declared before their bodies are lowered.
+    *   Enables calling functions defined later in the source file.
+    *   Critical for forward references and mutual recursion.
 
-## 📊 Language Features Status
+13. **Number Literal Parsing with Underscores**
+    *   Support for numeric separators in literals (e.g., `50_000_000`).
+    *   Underscores are stripped during parsing for both int and float literals.
 
-| Feature | Status |
-|---------|--------|
-| Functions with parameters/returns | ✅ Complete |
-| Let statements | ✅ Complete |
-| Assignments | ✅ Complete |
-| Compound assignments (+=, -=, etc.) | ✅ Complete |
-| For loops | ✅ Complete |
-| If/else statements | ✅ Complete |
-| Comparison operators | ✅ Complete |
-| Arithmetic operators | ✅ Complete |
-| Unary operators | ✅ Complete |
-| Type coercion (int↔float) | ✅ Complete |
-| Print statements | ✅ Complete |
-| F-string interpolation | ⏳ Future |
-| Module imports | ⏳ Future |
-| Member access | ⏳ Future |
-| While loops | ⏳ Future |
-| Break/continue | ⏳ Future |
-| Pattern matching | ⏳ Future |
-| Structs/Enums | ⏳ Future |
-| Async/await | ⏳ Future |
+## 🧪 Testing:
 
-## 🎯 Key Achievements
+*   All existing parser tests (`parser_tests.rs`) pass.
+*   Successfully tested `examples/hello.otter`.
+*   Successfully tested `examples/demo.otter`, showcasing `let`, `if/else`, `for` loops, arithmetic, and function calls.
+*   Successfully tested `examples/pi_simple.otter`, demonstrating function parameters, return values, for loops with mixed types, compound assignment, and unary negation.
+*   **Successfully ran `examples/pi_benchmark.otter`** - the original benchmark with module imports, member access, type coercion, and all core features!
 
-1. **Full Function Support**: Functions can now accept typed parameters and return values
-2. **Control Flow**: If/else and for loops work with proper LLVM branching
-3. **Type System**: Basic type inference and int/float coercion
-4. **Operators**: Complete set of arithmetic, comparison, and compound assignment operators
-5. **Real Programs**: Can now compile and run practical algorithms like pi calculation
+## 📝 Known Limitations:
 
-## 🔧 Technical Implementation
+1.  **F-string interpolation** - Basic implementation, only handles simple identifiers. No runtime formatting or complex expressions yet.
+2.  **UTF-8 display** - Some UTF-8 characters (like emoji) may not display correctly in f-strings.
+3.  **Module system** - Simplified implementation, only resolves standard library modules, no custom module loading yet.
 
-### Parser Enhancements
-- Function parameter parsing with optional type annotations
-- Return type annotations
-- Compound assignment operator desugaring
-- Range expression parsing (`start..end`)
+## 🎯 Next Steps for Full Language Support:
 
-### LLVM Codegen
-- Function type generation with parameters and returns
-- Proper stack allocation for parameters and locals
-- Control flow graph construction (if/else branches, loops)
-- Type coercion instructions (sitofp for int→float)
-- Loop construction with headers, bodies, and exit blocks
-
-### Type System
-- Type inference from literals and expressions
-- Automatic int↔float coercion
-- Type checking for function calls and returns
-
-## 🧪 Testing
-
-All core features tested and working:
-- ✅ Function parameters and returns
-- ✅ For loops with ranges
-- ✅ If/else statements
-- ✅ Compound assignments
-- ✅ Comparison operators
-- ✅ Arithmetic with mixed types
-- ✅ Pi calculation algorithm
-
-## 📝 Next Steps
-
-To reach full parity with the original pi_benchmark.otter spec:
-1. **F-string interpolation**: `f"π ≈ {result}"`
-2. **Module system**: `use otter:time`
-3. **Member access**: `time.now()`
-4. **Integer literals**: Proper int/float distinction
-
-## 🎉 Conclusion
-
-OtterLang has reached a significant milestone! The language now supports:
-- Real function definitions with parameters and return values
-- Full control flow (if/else, for loops)
-- A working type system with coercion
-- Complex algorithms like pi calculation
-
-The core language is functional and can compile practical programs. Future work will focus on modules, f-strings, and more advanced type system features.
-
+1.  Improve f-string interpolation to handle:
+    *   Complex expressions (e.g., `{x + y}`)
+    *   Runtime string formatting for numbers
+    *   Proper UTF-8 string concatenation
+2.  Implement `elif` branches (currently only `if/else` works)
+3.  Implement `while` loops
+4.  Implement `break` and `continue` statements
+5.  Add struct and enum support
+6.  Implement pattern matching
+7.  Add async/await functionality
+8.  Improve error messages and diagnostics
