@@ -9,17 +9,19 @@ use colored::Colorize;
 use tracing::{debug, info};
 
 use crate::cache::{CacheBuildOptions, CacheEntry, CacheManager, CacheMetadata, CompilationInputs};
-use crate::codegen::{self, build_executable, BuildArtifact, CodegenOptLevel, CodegenOptions};
+use crate::codegen::{self, build_executable, BuildArtifact, CodegenOptLevel, CodegenOptions, TargetTriple};
 use crate::lexer::{tokenize, LexerError};
+use crate::module::ModuleProcessor;
 use crate::parser::{parse, ParserError};
 use crate::runtime::ffi;
+use crate::typecheck::TypeChecker;
 use crate::utils::errors::{emit_diagnostics, Diagnostic};
 use crate::utils::logger;
 use crate::utils::profiler::{PhaseTiming, Profiler};
 use crate::version::VERSION;
 
 #[derive(Parser, Debug)]
-#[command(name = "otter", version = VERSION, about = "OtterLang compiler CLI")]
+#[command(name = "otter", version = VERSION, about = "🦦 OtterLang compiler CLI - Making programming fun!")]
 pub struct OtterCli {
     #[arg(long, global = true)]
     /// Dump the token stream before parsing.
@@ -57,6 +59,14 @@ pub struct OtterCli {
     /// Trace task lifecycle events from the runtime.
     tasks_trace: bool,
 
+    #[arg(long, global = true)]
+    /// Enable debug mode with stack traces.
+    debug: bool,
+
+    #[arg(long, global = true)]
+    /// Target triple for cross-compilation (e.g., wasm32-unknown-unknown, thumbv7m-none-eabi)
+    target: Option<String>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -71,15 +81,32 @@ enum Command {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+    /// Start an interactive REPL (Read-Eval-Print Loop).
+    Repl,
+    /// Format OtterLang source code.
+    Fmt {
+        /// Files to format (defaults to all .otter files in current directory)
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+    },
+    /// Profile OtterLang programs (memory or performance)
+    Profile {
+        #[command(subcommand)]
+        subcommand: crate::tools::profiler::ProfileCommand,
+    },
 }
 
 pub fn run() -> Result<()> {
     logger::init_logging();
     ffi::bootstrap_stdlib();
     let cli = OtterCli::parse();
+    
     match &cli.command {
         Command::Run { path } => handle_run(&cli, path),
         Command::Build { path, output } => handle_build(&cli, path, output.clone()),
+        Command::Repl => handle_repl(),
+        Command::Fmt { paths } => handle_fmt(paths),
+        Command::Profile { subcommand } => crate::tools::profiler::run_profiler_subcommand(subcommand),
     }
 }
 
@@ -91,7 +118,8 @@ fn handle_run(cli: &OtterCli, path: &Path) -> Result<()> {
     match &stage.result {
         CompilationResult::CacheHit(entry) => {
             println!(
-                "{} {}",
+                "{} {} {}",
+                "💨".green(),
                 "cache".green().bold(),
                 format!("hit ({} bytes)", entry.metadata.binary_size)
             );
@@ -101,11 +129,11 @@ fn handle_run(cli: &OtterCli, path: &Path) -> Result<()> {
             execute_binary(&entry.binary_path, &settings)?;
         }
         CompilationResult::Compiled { artifact, metadata } => {
-            println!("{} {}", "building".bold(), artifact.binary.display());
+            println!("{} {} {}", "🔨".yellow(), "building".bold(), artifact.binary.display());
             execute_binary(&artifact.binary, &settings)?;
             if settings.dump_ir {
                 if let Some(ir) = &artifact.ir {
-                    println!("{}", "== LLVM IR ==".bold());
+                    println!("{}", "⚙️ == LLVM IR ==".bold());
                     println!("{ir}");
                 }
             }
@@ -146,13 +174,13 @@ fn handle_build(cli: &OtterCli, path: &Path, output: Option<PathBuf>) -> Result<
         )
     })?;
 
-    println!("{} {}", "built".green().bold(), output_path.display());
+    println!("{} {}", "✨".green(), format!("built {}", output_path.display()).green().bold());
 
     match &stage.result {
         CompilationResult::Compiled { artifact, metadata } => {
             if settings.dump_ir {
                 if let Some(ir) = &artifact.ir {
-                    println!("{}", "== LLVM IR ==".bold());
+                    println!("{}", "⚙️ == LLVM IR ==".bold());
                     println!("{ir}");
                 }
             }
@@ -180,18 +208,25 @@ fn compile_pipeline(
     settings: &CompilationSettings,
 ) -> Result<CompilationStage> {
     let cache_manager = CacheManager::new()?;
-    let inputs = CompilationInputs::new(path.to_path_buf(), Vec::new());
     let cache_options = settings.cache_build_options();
     let mut profiler = Profiler::new();
     let source_id = path.display().to_string();
+    let source_dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
 
-    let cache_key = profiler.record_phase("Fingerprint", || {
+    // Try to find stdlib directory
+    let stdlib_dir = find_stdlib_dir().ok();
+    
+    // Initial inputs without module dependencies (will be updated after parsing)
+    let mut inputs = CompilationInputs::new(path.to_path_buf(), Vec::new());
+    
+    // Generate initial cache key for quick lookup check
+    let initial_cache_key = profiler.record_phase("Fingerprint", || {
         cache_manager.fingerprint(&inputs, &cache_options, VERSION)
     })?;
 
     if settings.allow_cache() {
         if let Some(entry) =
-            profiler.record_phase("Cache lookup", || cache_manager.lookup(&cache_key))?
+            profiler.record_phase("Cache lookup", || cache_manager.lookup(&initial_cache_key))?
         {
             debug!(cache_hit = %entry.binary_path.display());
             profiler.push_phase("Compile skipped", Duration::from_millis(0));
@@ -211,23 +246,68 @@ fn compile_pipeline(
     };
 
     if settings.dump_tokens {
-        println!("{}", "== Tokens ==".bold());
+        println!("{}", "🔤 == Tokens ==".bold());
         for token in &tokens {
             println!("{:?} @ {:?}", token.kind, token.span);
         }
     }
 
     let program = match profiler.record_phase("Parsing", || parse(&tokens)) {
-        Ok(program) => program,
+        Ok(program) => {
+            if settings.debug {
+                println!("{} Parsed successfully!", "✅".green());
+            }
+            program
+        }
         Err(errors) => {
+            println!("{} Parsing failed!", "❌".red());
             emit_parser_errors(&source_id, source, &errors);
             bail!("parsing failed");
         }
     };
 
     if settings.dump_ast {
-        println!("{}", "== AST ==".bold());
+        println!("{}", "🌳 == AST ==".bold());
         println!("{:#?}", program);
+    }
+
+    // Process module imports
+    let mut module_processor = ModuleProcessor::new(source_dir.clone(), stdlib_dir.clone());
+    let module_deps = profiler.record_phase("Module Resolution", || {
+        module_processor.process_imports(&program)
+    })?;
+
+    // Type check the program
+    let mut type_checker = TypeChecker::new();
+    if let Err(err) = profiler.record_phase("Type Checking", || {
+        type_checker.check_program(&program)
+    }) {
+        // Emit type errors
+        println!("{} {}", "🔍".yellow(), "== Type Errors ==".bold().red());
+        for error in type_checker.errors() {
+            println!("{}", error);
+        }
+        return Err(err).with_context(|| "type checking failed");
+    }
+
+    // Update inputs with module dependencies for accurate cache fingerprinting
+    inputs.imports = module_deps.clone();
+    let cache_key = profiler.record_phase("Fingerprint (with modules)", || {
+        cache_manager.fingerprint(&inputs, &cache_options, VERSION)
+    })?;
+
+    // Check cache again with module dependencies included
+    if settings.allow_cache() {
+        if let Some(entry) =
+            profiler.record_phase("Cache lookup (with modules)", || cache_manager.lookup(&cache_key))?
+        {
+            debug!(cache_hit = %entry.binary_path.display());
+            profiler.push_phase("Compile skipped", Duration::from_millis(0));
+            return Ok(CompilationStage {
+                profiler,
+                result: CompilationResult::CacheHit(entry),
+            });
+        }
     }
 
     let codegen_options = settings.codegen_options();
@@ -298,6 +378,8 @@ struct CompilationSettings {
     tasks: bool,
     tasks_debug: bool,
     tasks_trace: bool,
+    debug: bool,
+    target: Option<String>,
 }
 
 impl CompilationSettings {
@@ -312,6 +394,8 @@ impl CompilationSettings {
             tasks: cli.tasks,
             tasks_debug: cli.tasks_debug,
             tasks_trace: cli.tasks_trace,
+            debug: cli.debug,
+            target: cli.target.clone(),
         }
     }
 
@@ -328,6 +412,12 @@ impl CompilationSettings {
     }
 
     fn codegen_options(&self) -> CodegenOptions {
+        let target = self.target.as_ref().and_then(|t| {
+            TargetTriple::parse(t).map_err(|e| {
+                eprintln!("Warning: Invalid target triple '{}': {}", t, e);
+            }).ok()
+        });
+        
         CodegenOptions {
             emit_ir: self.dump_ir,
             opt_level: if self.release {
@@ -336,6 +426,10 @@ impl CompilationSettings {
                 CodegenOptLevel::Default
             },
             enable_lto: self.release,
+            enable_pgo: false,
+            pgo_profile_file: None,
+            inline_threshold: None,
+            target,
         }
     }
 }
@@ -364,7 +458,39 @@ fn canonical_or(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
+fn find_stdlib_dir() -> Result<PathBuf> {
+    // Try environment variable first
+    if let Ok(dir) = std::env::var("OTTER_STDLIB_DIR") {
+        let path = PathBuf::from(dir);
+        if path.exists() {
+            return Ok(path);
+        }
+    }
+
+    // Try relative to executable (for development)
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let stdlib = exe_dir.parent().unwrap_or(exe_dir).join("stdlib").join("otter");
+            if stdlib.exists() {
+                return Ok(stdlib);
+            }
+        }
+    }
+
+    // Try relative to current directory (for development)
+    let stdlib = PathBuf::from("stdlib").join("otter");
+    if stdlib.exists() {
+        return Ok(stdlib);
+    }
+
+    bail!("stdlib directory not found. Set OTTER_STDLIB_DIR environment variable or ensure stdlib/otter exists")
+}
+
 fn execute_binary(path: &Path, settings: &CompilationSettings) -> Result<()> {
+    if settings.debug {
+        println!("{} Running program: {}", "🚀".cyan(), path.display());
+    }
+    
     let mut command = ProcessCommand::new(path);
 
     if settings.tasks {
@@ -376,12 +502,21 @@ fn execute_binary(path: &Path, settings: &CompilationSettings) -> Result<()> {
     if settings.tasks_trace {
         command.env("OTTER_TASKS_TRACE", "1");
     }
+    if settings.debug {
+        command.env("RUST_BACKTRACE", "1");
+        command.env("OTTER_DEBUG", "1");
+    }
 
     let status = command
         .status()
         .with_context(|| format!("failed to execute {}", path.display()))?;
 
     if !status.success() {
+        if settings.debug {
+            eprintln!("{} {}", "💥".red(), "== Stack Trace ==".bold().red());
+            eprintln!("Program exited with status: {}", status);
+            eprintln!("Run with --debug to see full backtrace");
+        }
         bail!("program exited with status {status}");
     }
 
@@ -389,17 +524,99 @@ fn execute_binary(path: &Path, settings: &CompilationSettings) -> Result<()> {
 }
 
 fn print_timings(stage: &CompilationStage) {
-    println!("{}", "[Timing]".bold());
+    println!("\n{} Compilation Timings:", "⏱️".yellow());
     let mut total = Duration::ZERO;
     for PhaseTiming { name, duration } in stage.timings() {
-        println!("{:>16}: {:>6.2} ms", name, duration.as_secs_f64() * 1000.0);
+        let pct = if total.as_secs_f64() > 0.0 {
+            (duration.as_secs_f64() / total.as_secs_f64()) * 100.0
+        } else {
+            0.0
+        };
+        println!(
+            "  {} {}: {:.2}ms ({:.1}%)",
+            "📊".cyan(),
+            name.cyan(),
+            duration.as_secs_f64() * 1000.0,
+            pct
+        );
         total += *duration;
     }
-    println!("{:>16}: {:>6.2} ms", "Total", total.as_secs_f64() * 1000.0);
+    println!("  {} Total: {:.2}ms", "🎯".green(), total.as_secs_f64() * 1000.0);
+}
+
+fn handle_fmt(paths: &[PathBuf]) -> Result<()> {
+    use crate::fmt::Formatter;
+    use crate::lexer::tokenize;
+    use crate::parser::parse;
+    use glob::glob;
+
+    println!("{} Formatting OtterLang files...", "✨".magenta());
+    
+    let formatter = Formatter::new();
+    let mut formatted_count = 0;
+
+    // Collect all .otter files
+    let mut files = Vec::new();
+    if paths.is_empty() || (paths.len() == 1 && paths[0].to_str() == Some(".")) {
+        // Default: format all .otter files in current directory recursively
+        for entry in glob("**/*.otter")? {
+            if let Ok(path) = entry {
+                files.push(path);
+            }
+        }
+    } else {
+        for path in paths {
+            if path.is_dir() {
+                for entry in glob(&format!("{}/**/*.otter", path.display()))? {
+                    if let Ok(p) = entry {
+                        files.push(p);
+                    }
+                }
+            } else if path.extension().map_or(false, |ext| ext == "otter") {
+                files.push(path.clone());
+            }
+        }
+    }
+
+    for file_path in files {
+        let source = fs::read_to_string(&file_path)
+            .with_context(|| format!("failed to read {}", file_path.display()))?;
+
+        let tokens = tokenize(&source)
+            .map_err(|_| anyhow::anyhow!("failed to tokenize {}", file_path.display()))?;
+
+        let program = parse(&tokens)
+            .map_err(|_| anyhow::anyhow!("failed to parse {}", file_path.display()))?;
+
+        let formatted = formatter.format_program(&program);
+
+        if formatted != source {
+            fs::write(&file_path, formatted)
+                .with_context(|| format!("failed to write {}", file_path.display()))?;
+            println!("{} {}", "✨".green(), format!("Formatted {}", file_path.display()).green());
+            formatted_count += 1;
+        }
+    }
+
+    if formatted_count == 0 {
+        println!("{} All files are already formatted! 🎉", "✨".green());
+    } else {
+        println!("{} Formatted {} file(s)! 🎉", "✨".green().bold(), formatted_count);
+    }
+
+    Ok(())
+}
+
+fn handle_repl() -> Result<()> {
+    use crate::repl::ReplEngine;
+    println!("{} Starting OtterLang REPL...", "🦦".cyan());
+    println!("{} Type 'exit' or 'quit' to exit, 'help' for help", "💡".yellow());
+    let mut repl = ReplEngine::new();
+    repl.run()
 }
 
 fn print_profile(metadata: &CacheMetadata) {
-    println!("{}", "[Profile]".bold());
+    println!("\n{} Compilation Profile:", "📈".magenta());
     println!("{:>16}: {}", "Binary", metadata.binary_path.display());
     println!("{:>16}: {} bytes", "Size", metadata.binary_size);
     println!("{:>16}: {} ms", "Build", metadata.build_time_ms);
@@ -409,6 +626,7 @@ fn print_profile(metadata: &CacheMetadata) {
 }
 
 fn emit_lexer_errors(source_id: &str, source: &str, errors: &[LexerError]) {
+    println!("{} Lexical errors detected!", "🔤".red());
     let diagnostics: Vec<Diagnostic> = errors
         .iter()
         .map(|err| err.to_diagnostic(source_id))
@@ -417,6 +635,7 @@ fn emit_lexer_errors(source_id: &str, source: &str, errors: &[LexerError]) {
 }
 
 fn emit_parser_errors(source_id: &str, source: &str, errors: &[ParserError]) {
+    println!("{} Parsing errors detected!", "📝".red());
     let diagnostics: Vec<Diagnostic> = errors
         .iter()
         .map(|err| err.to_diagnostic(source_id))

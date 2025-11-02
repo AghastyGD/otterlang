@@ -40,25 +40,47 @@ impl LexerError {
                 source_id,
                 span.clone(),
                 self.to_string(),
-            ),
-            LexerError::IndentationMismatch { span, .. } => Diagnostic::new(
+            )
+            .with_suggestion("Use spaces instead of tabs for indentation")
+            .with_help("OtterLang uses spaces for indentation. Configure your editor to use spaces."),
+            LexerError::IndentationMismatch { span, expected, found, .. } => Diagnostic::new(
                 DiagnosticSeverity::Error,
                 source_id,
                 span.clone(),
                 self.to_string(),
-            ),
+            )
+            .with_suggestion(format!("Indent with {} spaces (found {})", expected, found))
+            .with_help("Check that indentation is consistent throughout the file."),
             LexerError::UnterminatedString { span, .. } => Diagnostic::new(
                 DiagnosticSeverity::Error,
                 source_id,
                 span.clone(),
                 self.to_string(),
-            ),
-            LexerError::UnexpectedCharacter { span, .. } => Diagnostic::new(
-                DiagnosticSeverity::Error,
-                source_id,
-                span.clone(),
-                self.to_string(),
-            ),
+            )
+            .with_suggestion("Add a closing quote (\") to terminate the string")
+            .with_help("String literals must be enclosed in double quotes."),
+            LexerError::UnexpectedCharacter { span, ch, .. } => {
+                let mut diag = Diagnostic::new(
+                    DiagnosticSeverity::Error,
+                    source_id,
+                    span.clone(),
+                    self.to_string(),
+                );
+                
+                // Provide suggestions for common typos
+                match ch {
+                    '`' => diag = diag.with_suggestion("Did you mean a single quote (') or double quote (\")?"),
+                    '~' => diag = diag.with_suggestion("Did you mean tilde (~) or negation (not)?"),
+                    '@' => diag = diag.with_suggestion("Did you mean the at symbol (@) or member access (.)?"),
+                    _ => {
+                        if ch.is_ascii_punctuation() {
+                            diag = diag.with_suggestion("Check for typos or invalid characters");
+                        }
+                    }
+                }
+                
+                diag.with_help("This character is not valid in OtterLang syntax.")
+            }
         }
     }
 }
@@ -592,6 +614,7 @@ impl LexerState {
             "use" => TokenKind::Use,
             "from" => TokenKind::From,
             "as" => TokenKind::As,
+            "pub" => TokenKind::Pub,
             "async" => TokenKind::Async,
             "await" => TokenKind::Await,
             "spawn" => TokenKind::Spawn,

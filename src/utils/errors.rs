@@ -15,6 +15,8 @@ pub struct Diagnostic {
     source_id: String,
     span: Span,
     message: String,
+    suggestion: Option<String>,
+    help: Option<String>,
 }
 
 impl Diagnostic {
@@ -29,7 +31,19 @@ impl Diagnostic {
             source_id: source_id.into(),
             span,
             message: message.into(),
+            suggestion: None,
+            help: None,
         }
+    }
+
+    pub fn with_suggestion(mut self, suggestion: impl Into<String>) -> Self {
+        self.suggestion = Some(suggestion.into());
+        self
+    }
+
+    pub fn with_help(mut self, help: impl Into<String>) -> Self {
+        self.help = Some(help.into());
+        self
     }
 
     pub fn severity(&self) -> DiagnosticSeverity {
@@ -46,6 +60,14 @@ impl Diagnostic {
 
     pub fn source_id(&self) -> &str {
         &self.source_id
+    }
+
+    pub fn suggestion(&self) -> Option<&str> {
+        self.suggestion.as_deref()
+    }
+
+    pub fn help(&self) -> Option<&str> {
+        self.help.as_deref()
     }
 
     pub fn report_kind(&self) -> ReportKind<'_> {
@@ -87,7 +109,7 @@ pub fn emit_diagnostics(diagnostics: &[Diagnostic], source: &str) {
         };
 
         let span: std::ops::Range<usize> = diagnostic.span().into();
-        let report = Report::build(
+        let mut report = Report::build(
             diagnostic.report_kind(),
             diagnostic.source_id().to_string(),
             span.start,
@@ -97,11 +119,21 @@ pub fn emit_diagnostics(diagnostics: &[Diagnostic], source: &str) {
             Label::new((diagnostic.source_id().to_string(), span.clone()))
                 .with_message(diagnostic.message())
                 .with_color(color),
-        )
-        .with_note("For more information, re-run with --debug to inspect tokens and AST.")
-        .finish();
+        );
 
-        let _ = report.print((diagnostic.source_id().to_string(), Source::from(source)));
+        // Add suggestion if available
+        if let Some(suggestion) = diagnostic.suggestion() {
+            report = report.with_note(format!("💡 Suggestion: {}", suggestion));
+        }
+
+        // Add help text if available
+        if let Some(help) = diagnostic.help() {
+            report = report.with_note(format!("ℹ️  {}", help));
+        } else {
+            report = report.with_note("For more information, re-run with --debug to inspect tokens and AST.");
+        }
+
+        let _ = report.finish().print((diagnostic.source_id().to_string(), Source::from(source)));
     }
 }
 

@@ -1,0 +1,50 @@
+# 🦦 OtterLang File System Module
+
+# Check if path exists
+fn exists(path: string) -> bool:
+    return fs.exists(path) != 0
+
+# Create directory (and parents)
+fn mkdir(path: string) -> bool:
+    return fs.mkdir(path) != 0
+
+# Remove directory (recursive)
+fn rmdir(path: string) -> bool:
+    return fs.rmdir(path) != 0
+
+# Remove file
+fn remove(path: string) -> bool:
+    return fs.remove(path) != 0
+
+# List directory contents
+fn list_dir(path: string) -> list<string>:
+    return fs.list_dir(path)
+
+# Check if path is a file
+fn is_file(path: string) -> bool:
+    return fs.is_file(path) != 0
+
+# Check if path is a directory
+fn is_dir(path: string) -> bool:
+    return fs.is_dir(path) != 0
+
+# Get file size in bytes
+fn file_size(path: string) -> int:
+    return fs.file_size(path)
+
+# Read entire file
+fn read(path: string) -> string:
+    return io.read(path)
+
+# Write data to file
+fn write(path: string, data: string) -> bool:
+    return io.write(path, data) != 0
+
+# Copy file
+fn copy(src: string, dst: string) -> bool:
+    return io.copy(src, dst) != 0
+
+# Read all lines from file
+fn lines(path: string) -> list<string>:
+    return io.lines(path)
+

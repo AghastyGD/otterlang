@@ -60,6 +60,7 @@ pub enum TokenKind {
     Use,
     From,
     As,
+    Pub,
     Async,
     Await,
     Spawn,
@@ -141,14 +142,15 @@ impl Hash for TokenKind {
             TokenKind::Use => 11u16.hash(state),
             TokenKind::From => 12u16.hash(state),
             TokenKind::As => 13u16.hash(state),
-            TokenKind::Async => 14u16.hash(state),
-            TokenKind::Await => 15u16.hash(state),
-            TokenKind::Spawn => 16u16.hash(state),
-            TokenKind::Match => 17u16.hash(state),
-            TokenKind::Case => 18u16.hash(state),
-            TokenKind::True => 19u16.hash(state),
-            TokenKind::False => 20u16.hash(state),
-            TokenKind::Print => 21u16.hash(state),
+            TokenKind::Pub => 14u16.hash(state),
+            TokenKind::Async => 15u16.hash(state),
+            TokenKind::Await => 16u16.hash(state),
+            TokenKind::Spawn => 17u16.hash(state),
+            TokenKind::Match => 18u16.hash(state),
+            TokenKind::Case => 19u16.hash(state),
+            TokenKind::True => 20u16.hash(state),
+            TokenKind::False => 21u16.hash(state),
+            TokenKind::Print => 22u16.hash(state),
 
             // Identifiers
             TokenKind::Identifier(name) => {
@@ -244,6 +246,7 @@ impl TokenKind {
             TokenKind::Use => "use",
             TokenKind::From => "from",
             TokenKind::As => "as",
+            TokenKind::Pub => "pub",
             TokenKind::Async => "async",
             TokenKind::Await => "await",
             TokenKind::Spawn => "spawn",
@@ -348,9 +351,10 @@ impl Token {
                 | TokenKind::Break
                 | TokenKind::Continue
                 | TokenKind::In
-                | TokenKind::Use
+                |             TokenKind::Use
                 | TokenKind::From
                 | TokenKind::As
+                | TokenKind::Pub
                 | TokenKind::Async
                 | TokenKind::Await
                 | TokenKind::Spawn

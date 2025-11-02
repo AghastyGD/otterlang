@@ -1,5 +1,0 @@
-fn test(param: Channel<int>) -> int:
-    return 42
-
-fn main:
-    print("Hello")

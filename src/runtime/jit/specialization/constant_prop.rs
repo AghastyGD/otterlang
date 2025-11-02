@@ -13,7 +13,7 @@ impl ConstantPropagator {
     pub fn extract_constants(&self, expr: &Expr) -> Vec<Option<RuntimeConstant>> {
         match expr {
             Expr::Literal(lit) => {
-                vec![Some(self.literal_to_constant(lit))]
+                vec![self.literal_to_constant(lit)]
             }
             Expr::Binary { left, right, .. } => {
                 let mut result = self.extract_constants(left);
@@ -28,22 +28,26 @@ impl ConstantPropagator {
         }
     }
 
-    fn literal_to_constant(&self, lit: &crate::ast::nodes::Literal) -> RuntimeConstant {
+    fn literal_to_constant(&self, lit: &crate::ast::nodes::Literal) -> Option<RuntimeConstant> {
         match lit {
-            crate::ast::nodes::Literal::Bool(b) => RuntimeConstant::Bool(*b),
+            crate::ast::nodes::Literal::Bool(b) => Some(RuntimeConstant::Bool(*b)),
             crate::ast::nodes::Literal::Number(n) => {
                 // Try to determine if it's an integer or float
                 if n.fract() == 0.0 {
                     if *n >= i32::MIN as f64 && *n <= i32::MAX as f64 {
-                        RuntimeConstant::I32(*n as i32)
+                        Some(RuntimeConstant::I32(*n as i32))
                     } else {
-                        RuntimeConstant::I64(*n as i64)
+                        Some(RuntimeConstant::I64(*n as i64))
                     }
                 } else {
-                    RuntimeConstant::F64(*n)
+                    Some(RuntimeConstant::F64(*n))
                 }
             }
-            crate::ast::nodes::Literal::String(s) => RuntimeConstant::Str(s.clone()),
+            crate::ast::nodes::Literal::String(s) => Some(RuntimeConstant::Str(s.clone())),
+            crate::ast::nodes::Literal::Unit => {
+                // Unit type has no runtime constant representation
+                None
+            }
         }
     }
 }
@@ -53,3 +57,4 @@ impl Default for ConstantPropagator {
         Self::new()
     }
 }
+

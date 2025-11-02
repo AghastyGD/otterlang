@@ -2,6 +2,19 @@
 
 An experimental indentation-sensitive programming language with an LLVM backend. OtterLang compiles to native binaries with a focus on simplicity and performance.
 
+## Quick Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/jonathanmagambo/otterlang.git
+cd otterlang
+
+# Run the setup script
+./setup.sh
+```
+
+The setup script will build and install the `otter` command globally. After installation, you can use `otter` from anywhere.
+
 ## Installation
 
 ### Prerequisites
@@ -30,7 +43,7 @@ sudo apt-get install -y llvm-15 llvm-15-dev clang-15
 export LLVM_SYS_150_PREFIX=/usr/lib/llvm-15
 ```
 
-#### Build from Source
+#### Manual Build
 
 ```bash
 # Clone the repository
@@ -40,11 +53,9 @@ cd otterlang
 # Build the compiler
 cargo build --release
 
-# Install globally (optional)
-cargo install --path .
+# Install globally
+cargo install --path . --bin otter
 ```
-
-The compiled binary will be available at `target/release/otterlang` or `target/release/otter` (depending on your configuration).
 
 ## Quick Start
 
@@ -140,11 +151,13 @@ OtterLang provides several built-in modules:
 
 - **`otter:math`** - Mathematical functions (sin, cos, sqrt, etc.)
 - **`otter:io`** - File I/O operations
+- **`otter:fs`** - File system operations
+- **`otter:http`** - HTTP client/server
 - **`otter:time`** - Time utilities (now_ms, sleep, etc.)
-- **`otter:task`** - Task-based concurrency (experimental)
+- **`otter:task`** - Task-based concurrency
 - **`otter:rand`** - Random number generation
 - **`otter:json`** - JSON parsing and serialization
-- **`otter:net`** - Networking (HTTP, TCP)
+- **`otter:net`** - Networking (TCP)
 - **`otter:fmt`** - Formatting utilities
 
 ```otter
@@ -175,11 +188,43 @@ fn main:
 
 ## Examples
 
-See the `examples/` directory for more complete examples:
+See the `examples/` directory for complete examples:
 
-- `hello.otter` - Basic "Hello, World!"
 - `advanced_pipeline.otter` - Complex computation pipeline
-- `task_benchmark.otter` - Task runtime demonstration (experimental)
+- `task_benchmark.otter` - Task runtime demonstration
+
+## CLI Commands
+
+```bash
+# Run a program
+otter run program.otter
+
+# Build an executable
+otter build program.otter -o output
+
+# Format code
+otter fmt
+
+# Profile memory usage
+otter profile memory program.otter
+
+# Start REPL
+otter repl
+
+# Debug flags
+otter run program.otter --dump-tokens    # Show token stream
+otter run program.otter --dump-ast       # Show AST
+otter run program.otter --dump-ir        # Show LLVM IR
+otter run program.otter --time           # Show compilation timing
+otter run program.otter --profile        # Show build profile
+
+# Release mode (optimized)
+otter build program.otter --release
+
+# Cross-compilation
+otter build program.otter --target wasm32-unknown-unknown
+otter build program.otter --target thumbv7m-none-eabi
+```
 
 ## Project Structure
 
@@ -191,33 +236,30 @@ otterlang/
 │   ├── lexer/           # Tokenizer
 │   ├── parser/          # Chumsky-based parser
 │   ├── ast/             # Abstract syntax tree
+│   ├── typecheck/       # Type checking
 │   ├── codegen/         # LLVM code generation
 │   ├── runtime/         # Runtime and stdlib
+│   ├── tools/           # Developer tools (profiler)
 │   └── utils/           # Diagnostics and helpers
 ├── stdlib/otter/        # Standard library modules
 ├── examples/            # Example programs
-└── tests/               # Test suite
+├── ffi/                 # FFI bridge configurations
+└── docs/                # Documentation
 ```
 
-## CLI Commands
+## Features
 
-```bash
-# Run a program
-otter run program.otter
-
-# Build an executable
-otter build program.otter -o output
-
-# Debug flags
-otter run program.otter --dump-tokens    # Show token stream
-otter run program.otter --dump-ast       # Show AST
-otter run program.otter --dump-ir        # Show LLVM IR
-otter run program.otter --time           # Show compilation timing
-otter run program.otter --profile         # Show build profile
-
-# Release mode (optimized)
-otter build program.otter --release
-```
+- ✅ Indentation-based syntax
+- ✅ Type inference and type checking
+- ✅ LLVM backend with optimization
+- ✅ Standard library modules
+- ✅ FFI support for Rust crates
+- ✅ Memory management (GC, profiling)
+- ✅ Cross-compilation (WASM, embedded)
+- ✅ Task-based concurrency
+- ✅ REPL
+- ✅ Code formatting
+- ✅ Memory profiling
 
 ## Current Limitations
 
@@ -229,7 +271,7 @@ otter build program.otter --release
 
 2. **Type System**: Type inference is limited. Explicit type annotations are recommended for complex code.
 
-3. **Async/Tasks**: The task runtime is experimental and behind the `task-runtime` feature flag. Not all task features are fully implemented.
+3. **Async/Tasks**: The task runtime is experimental. Not all task features are fully implemented.
 
 4. **Standard Library**: Some stdlib modules may have incomplete implementations.
 
@@ -250,3 +292,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Status
 
 **Early Access (v0.1.0)** - Not production-ready. Use at your own risk.
+

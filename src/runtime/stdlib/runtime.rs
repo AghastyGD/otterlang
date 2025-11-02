@@ -1,4 +1,4 @@
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -9,11 +9,14 @@ use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use sysinfo::System;
 
+use crate::runtime::memory::gc::get_gc;
+use crate::runtime::memory::profiler::get_profiler;
+use crate::runtime::memory::config::GcStrategy;
 use crate::runtime::symbol_registry::{FfiFunction, FfiSignature, FfiType, SymbolRegistry};
 use crate::version::VERSION;
 
 #[cfg(feature = "task-runtime")]
-use crate::runtime::task::{TaskMetricsSnapshot, TaskRuntimeMetrics};
+use crate::runtime::task::{TaskMetricsSnapshot, TaskRuntimeMetrics, WorkerState};
 
 // ============================================================================
 // Runtime Statistics Tracking
@@ -87,17 +90,93 @@ pub extern "C" fn otter_runtime_memory() -> i64 {
 }
 
 /// Trigger garbage collection
-/// Note: Rust doesn't have GC, but we can:
-/// 1. Drop unused allocations
-/// 2. Trigger memory compaction if available
-/// 3. Clear caches
+/// Returns the number of bytes freed
 #[no_mangle]
-pub extern "C" fn otter_runtime_collect_garbage() {
-    // In Rust, we don't have explicit GC, but we can:
-    // 1. Suggest memory cleanup to the allocator
-    // 2. Clear any runtime caches
+pub extern "C" fn otter_runtime_collect_garbage() -> i64 {
+    let gc = get_gc();
+    let stats = gc.collect();
+    stats.bytes_freed as i64
+}
 
-    let _ = Vec::<u8>::with_capacity(1024);
+/// Start memory profiling
+#[no_mangle]
+pub extern "C" fn otter_runtime_memory_profiler_start() {
+    let profiler = get_profiler();
+    profiler.start();
+}
+
+/// Stop memory profiling
+#[no_mangle]
+pub extern "C" fn otter_runtime_memory_profiler_stop() {
+    let profiler = get_profiler();
+    profiler.stop();
+}
+
+/// Get memory profiling statistics as JSON
+#[no_mangle]
+pub extern "C" fn otter_runtime_memory_profiler_stats() -> *mut c_char {
+    let profiler = get_profiler();
+    let stats = profiler.get_stats();
+    
+    // Convert to JSON using serde_json if available, otherwise manual formatting
+    let json = serde_json::to_string(&stats).unwrap_or_else(|_| {
+        format!(
+            r#"{{"enabled":{},"total_allocated":{},"total_freed":{},"current_memory":{},"peak_memory":{},"active_allocations":{},"duration_seconds":{}}}"#,
+            stats.enabled,
+            stats.total_allocated,
+            stats.total_freed,
+            stats.current_memory,
+            stats.peak_memory,
+            stats.active_allocations,
+            stats.duration_seconds
+        )
+    });
+    
+    CString::new(json)
+        .ok()
+        .map(CString::into_raw)
+        .unwrap_or(std::ptr::null_mut())
+}
+
+/// Detect memory leaks and return as JSON
+#[no_mangle]
+pub extern "C" fn otter_runtime_memory_profiler_leaks() -> *mut c_char {
+    let profiler = get_profiler();
+    let leaks = profiler.detect_leaks();
+    
+    let json = serde_json::to_string(&leaks).unwrap_or_else(|_| {
+        format!(r#"{{"leak_count":{}}}"#, leaks.len())
+    });
+    
+    CString::new(json)
+        .ok()
+        .map(CString::into_raw)
+        .unwrap_or(std::ptr::null_mut())
+}
+
+/// Set garbage collection strategy
+/// strategy: "rc", "mark-sweep", "hybrid", or "none"
+#[no_mangle]
+pub extern "C" fn otter_runtime_set_gc_strategy(strategy: *const c_char) -> i32 {
+    if strategy.is_null() {
+        return 0;
+    }
+    
+    unsafe {
+        match CStr::from_ptr(strategy).to_str() {
+            Ok(s) => {
+                match s.parse::<GcStrategy>() {
+                    Ok(gc_strategy) => {
+                        let gc = get_gc();
+                        gc.set_strategy(gc_strategy);
+                        1
+                    }
+                    Err(_) => 0,
+                }
+            }
+            Err(_) => 0,
+        }
+    }
 }
 
 /// Get runtime statistics as a JSON string
@@ -135,6 +214,53 @@ pub extern "C" fn otter_runtime_stats() -> *mut c_char {
         .ok()
         .map(CString::into_raw)
         .unwrap_or(std::ptr::null_mut())
+}
+
+/// Get detailed task runtime state as JSON
+/// Returns comprehensive information about tasks, workers, and queues
+#[cfg(feature = "task-runtime")]
+#[no_mangle]
+pub extern "C" fn otter_runtime_tasks() -> *mut c_char {
+    if let Some(metrics) = task_metrics_clone() {
+        let snapshot = metrics.snapshot();
+        
+        // Build worker info array
+        let worker_json: Vec<String> = snapshot.worker_infos.iter().map(|w| {
+            let state_str = match w.state {
+                WorkerState::Idle => "idle",
+                WorkerState::Busy => "busy",
+                WorkerState::Parked => "parked",
+            };
+            format!(
+                "{{\"id\":{},\"state\":\"{}\",\"queue_depth\":{},\"tasks_processed\":{}}}",
+                w.id, state_str, w.queue_depth, w.tasks_processed
+            )
+        }).collect();
+        
+        let json = format!(
+            "{{\"tasks\":{{\"spawned\":{},\"completed\":{},\"waiting\":{}}},\"channels\":{{\"registered\":{},\"waiting\":{},\"backlog\":{}}},\"workers\":{{\"total\":{},\"active\":{}}},\"worker_details\":[{}]}}",
+            snapshot.tasks_spawned,
+            snapshot.tasks_completed,
+            snapshot.tasks_waiting,
+            snapshot.channels_registered,
+            snapshot.channel_waiters,
+            snapshot.channel_backlog,
+            snapshot.total_workers,
+            snapshot.active_workers,
+            worker_json.join(",")
+        );
+        
+        CString::new(json)
+            .ok()
+            .map(CString::into_raw)
+            .unwrap_or(std::ptr::null_mut())
+    } else {
+        // Return empty JSON if task runtime not available
+        CString::new("{}")
+            .ok()
+            .map(CString::into_raw)
+            .unwrap_or(std::ptr::null_mut())
+    }
 }
 
 /// Get OtterLang runtime version
@@ -209,13 +335,15 @@ fn task_metrics_field() -> Option<String> {
     guard.as_ref().map(|metrics| {
         let snapshot: TaskMetricsSnapshot = metrics.snapshot();
         format!(
-            "\"tasks\":{{\"spawned\":{},\"completed\":{},\"waiting\":{}}},\"channels\":{{\"registered\":{},\"waiting\":{},\"backlog\":{}}}",
+            "\"tasks\":{{\"spawned\":{},\"completed\":{},\"waiting\":{}}},\"channels\":{{\"registered\":{},\"waiting\":{},\"backlog\":{}}},\"workers\":{{\"total\":{},\"active\":{}}}",
             snapshot.tasks_spawned,
             snapshot.tasks_completed,
             snapshot.tasks_waiting,
             snapshot.channels_registered,
             snapshot.channel_waiters,
-            snapshot.channel_backlog
+            snapshot.channel_backlog,
+            snapshot.total_workers,
+            snapshot.active_workers
         )
     })
 }
@@ -246,7 +374,37 @@ fn register_std_runtime_symbols(registry: &SymbolRegistry) {
     registry.register(FfiFunction {
         name: "runtime.collect_garbage".into(),
         symbol: "otter_runtime_collect_garbage".into(),
+        signature: FfiSignature::new(vec![], FfiType::I64),
+    });
+
+    registry.register(FfiFunction {
+        name: "runtime.memory_profiler_start".into(),
+        symbol: "otter_runtime_memory_profiler_start".into(),
         signature: FfiSignature::new(vec![], FfiType::Unit),
+    });
+
+    registry.register(FfiFunction {
+        name: "runtime.memory_profiler_stop".into(),
+        symbol: "otter_runtime_memory_profiler_stop".into(),
+        signature: FfiSignature::new(vec![], FfiType::Unit),
+    });
+
+    registry.register(FfiFunction {
+        name: "runtime.memory_profiler_stats".into(),
+        symbol: "otter_runtime_memory_profiler_stats".into(),
+        signature: FfiSignature::new(vec![], FfiType::Str),
+    });
+
+    registry.register(FfiFunction {
+        name: "runtime.memory_profiler_leaks".into(),
+        symbol: "otter_runtime_memory_profiler_leaks".into(),
+        signature: FfiSignature::new(vec![], FfiType::Str),
+    });
+
+    registry.register(FfiFunction {
+        name: "runtime.set_gc_strategy".into(),
+        symbol: "otter_runtime_set_gc_strategy".into(),
+        signature: FfiSignature::new(vec![FfiType::Str], FfiType::I32),
     });
 
     registry.register(FfiFunction {
@@ -265,6 +423,13 @@ fn register_std_runtime_symbols(registry: &SymbolRegistry) {
         name: "runtime.free".into(),
         symbol: "otter_runtime_free_string".into(),
         signature: FfiSignature::new(vec![FfiType::Str], FfiType::Unit),
+    });
+
+    #[cfg(feature = "task-runtime")]
+    registry.register(FfiFunction {
+        name: "runtime.tasks".into(),
+        symbol: "otter_runtime_tasks".into(),
+        signature: FfiSignature::new(vec![], FfiType::Str),
     });
 }
 

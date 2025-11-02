@@ -282,6 +282,141 @@ pub extern "C" fn otter_std_io_buffer_data(handle: u64) -> *mut c_char {
     }
 }
 
+// ============================================================================
+// File System Operations
+// ============================================================================
+
+#[no_mangle]
+pub extern "C" fn otter_std_io_exists(path: *const c_char) -> i32 {
+    if path.is_null() {
+        return 0;
+    }
+    let path_str = unsafe { CStr::from_ptr(path).to_str().unwrap_or("").to_string() };
+    if fs::metadata(&path_str).is_ok() {
+        1
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn otter_std_io_mkdir(path: *const c_char) -> i32 {
+    if path.is_null() {
+        return 0;
+    }
+    let path_str = unsafe { CStr::from_ptr(path).to_str().unwrap_or("").to_string() };
+    match fs::create_dir_all(&path_str) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn otter_std_io_rmdir(path: *const c_char) -> i32 {
+    if path.is_null() {
+        return 0;
+    }
+    let path_str = unsafe { CStr::from_ptr(path).to_str().unwrap_or("").to_string() };
+    match fs::remove_dir_all(&path_str) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn otter_std_io_remove(path: *const c_char) -> i32 {
+    if path.is_null() {
+        return 0;
+    }
+    let path_str = unsafe { CStr::from_ptr(path).to_str().unwrap_or("").to_string() };
+    match fs::remove_file(&path_str) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn otter_std_io_list_dir(path: *const c_char) -> u64 {
+    if path.is_null() {
+        return 0;
+    }
+    let path_str = unsafe { CStr::from_ptr(path).to_str().unwrap_or("").to_string() };
+    
+    match fs::read_dir(&path_str) {
+        Ok(entries) => {
+            extern "C" {
+                fn otter_builtin_list_new() -> u64;
+                fn otter_builtin_append_list_string(handle: u64, val: *const c_char) -> i32;
+            }
+            
+            let list_handle = unsafe { otter_builtin_list_new() };
+            
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    if let Some(file_name) = entry.file_name().to_str() {
+                        let cstr = CString::new(file_name).unwrap();
+                        let ptr = cstr.into_raw();
+                        unsafe {
+                            let _ = otter_builtin_append_list_string(list_handle, ptr);
+                            let _ = CString::from_raw(ptr);
+                        }
+                    }
+                }
+            }
+            
+            list_handle
+        }
+        Err(_) => 0,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn otter_std_io_is_file(path: *const c_char) -> i32 {
+    if path.is_null() {
+        return 0;
+    }
+    let path_str = unsafe { CStr::from_ptr(path).to_str().unwrap_or("").to_string() };
+    if let Ok(metadata) = fs::metadata(&path_str) {
+        if metadata.is_file() {
+            1
+        } else {
+            0
+        }
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn otter_std_io_is_dir(path: *const c_char) -> i32 {
+    if path.is_null() {
+        return 0;
+    }
+    let path_str = unsafe { CStr::from_ptr(path).to_str().unwrap_or("").to_string() };
+    if let Ok(metadata) = fs::metadata(&path_str) {
+        if metadata.is_dir() {
+            1
+        } else {
+            0
+        }
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn otter_std_io_file_size(path: *const c_char) -> i64 {
+    if path.is_null() {
+        return -1;
+    }
+    let path_str = unsafe { CStr::from_ptr(path).to_str().unwrap_or("").to_string() };
+    if let Ok(metadata) = fs::metadata(&path_str) {
+        metadata.len() as i64
+    } else {
+        -1
+    }
+}
+
 fn register_std_io_symbols(registry: &SymbolRegistry) {
     registry.register(FfiFunction {
         name: "std.io.print".into(),
@@ -371,6 +506,54 @@ fn register_std_io_symbols(registry: &SymbolRegistry) {
         name: "io.buffer.data".into(),
         symbol: "otter_std_io_buffer_data".into(),
         signature: FfiSignature::new(vec![FfiType::Opaque], FfiType::Str),
+    });
+
+    registry.register(FfiFunction {
+        name: "fs.exists".into(),
+        symbol: "otter_std_io_exists".into(),
+        signature: FfiSignature::new(vec![FfiType::Str], FfiType::I32),
+    });
+
+    registry.register(FfiFunction {
+        name: "fs.mkdir".into(),
+        symbol: "otter_std_io_mkdir".into(),
+        signature: FfiSignature::new(vec![FfiType::Str], FfiType::I32),
+    });
+
+    registry.register(FfiFunction {
+        name: "fs.rmdir".into(),
+        symbol: "otter_std_io_rmdir".into(),
+        signature: FfiSignature::new(vec![FfiType::Str], FfiType::I32),
+    });
+
+    registry.register(FfiFunction {
+        name: "fs.remove".into(),
+        symbol: "otter_std_io_remove".into(),
+        signature: FfiSignature::new(vec![FfiType::Str], FfiType::I32),
+    });
+
+    registry.register(FfiFunction {
+        name: "fs.list_dir".into(),
+        symbol: "otter_std_io_list_dir".into(),
+        signature: FfiSignature::new(vec![FfiType::Str], FfiType::Opaque),
+    });
+
+    registry.register(FfiFunction {
+        name: "fs.is_file".into(),
+        symbol: "otter_std_io_is_file".into(),
+        signature: FfiSignature::new(vec![FfiType::Str], FfiType::I32),
+    });
+
+    registry.register(FfiFunction {
+        name: "fs.is_dir".into(),
+        symbol: "otter_std_io_is_dir".into(),
+        signature: FfiSignature::new(vec![FfiType::Str], FfiType::I32),
+    });
+
+    registry.register(FfiFunction {
+        name: "fs.file_size".into(),
+        symbol: "otter_std_io_file_size".into(),
+        signature: FfiSignature::new(vec![FfiType::Str], FfiType::I64),
     });
 }
 

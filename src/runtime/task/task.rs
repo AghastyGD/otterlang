@@ -30,6 +30,35 @@ pub enum TaskState {
     Ready,
     Running,
     Completed,
+    Cancelled,
+}
+
+/// Cancellation token shared between task and join handle.
+#[derive(Debug, Clone)]
+pub struct CancellationToken {
+    cancelled: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl CancellationToken {
+    pub fn new() -> Self {
+        Self {
+            cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
+    pub fn cancel(&self) {
+        self.cancelled.store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+
+impl Default for CancellationToken {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Shared synchronization primitive used by join handles.
@@ -96,6 +125,7 @@ pub struct Task {
     state: TaskState,
     func: Option<TaskFn>,
     join: Arc<JoinState>,
+    cancellation_token: CancellationToken,
 }
 
 impl Task {
@@ -106,6 +136,7 @@ impl Task {
             state: TaskState::Ready,
             func: Some(func),
             join: JoinState::new(),
+            cancellation_token: CancellationToken::new(),
         }
     }
 
@@ -129,12 +160,40 @@ impl Task {
         Arc::clone(&self.join)
     }
 
+    pub fn cancellation_token(&self) -> &CancellationToken {
+        &self.cancellation_token
+    }
+
+    pub fn cancel(&self) {
+        self.cancellation_token.cancel();
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancellation_token.is_cancelled()
+    }
+
     pub fn run(mut self) {
+        // Check if cancelled before running
+        if self.cancellation_token.is_cancelled() {
+            self.state = TaskState::Cancelled;
+            self.join.mark_complete();
+            return;
+        }
+
         self.state = TaskState::Running;
+        
+        // Run the function, but check for cancellation periodically
+        // Note: For cooperative cancellation, tasks should check cancellation_token themselves
         if let Some(func) = self.func.take() {
             func();
         }
-        self.state = TaskState::Completed;
+
+        // Check if cancelled after running
+        if self.cancellation_token.is_cancelled() {
+            self.state = TaskState::Cancelled;
+        } else {
+            self.state = TaskState::Completed;
+        }
         self.join.mark_complete();
     }
 }
@@ -142,11 +201,16 @@ impl Task {
 pub struct JoinHandle {
     task_id: TaskId,
     state: Arc<JoinState>,
+    cancellation_token: CancellationToken,
 }
 
 impl JoinHandle {
-    pub fn new(task_id: TaskId, state: Arc<JoinState>) -> Self {
-        Self { task_id, state }
+    pub fn new(task_id: TaskId, state: Arc<JoinState>, cancellation_token: CancellationToken) -> Self {
+        Self { 
+            task_id, 
+            state,
+            cancellation_token,
+        }
     }
 
     pub fn task_id(&self) -> TaskId {
@@ -159,6 +223,14 @@ impl JoinHandle {
 
     pub fn join(&self) {
         self.state.wait_blocking();
+    }
+
+    pub fn cancel(&self) {
+        self.cancellation_token.cancel();
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancellation_token.is_cancelled()
     }
 
     pub fn into_state(self) -> Arc<JoinState> {

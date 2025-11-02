@@ -48,9 +48,9 @@ impl Benchmark {
 /// Result of a benchmark run
 #[derive(Clone)]
 pub struct BenchmarkResult {
-    name: String,
-    iterations: usize,
-    samples: Vec<Duration>,
+    pub name: String,
+    pub iterations: usize,
+    pub samples: Vec<Duration>,
 }
 
 impl BenchmarkResult {

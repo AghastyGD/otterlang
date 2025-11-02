@@ -1,0 +1,44 @@
+# 🦦 OtterLang HTTP Module (via reqwest FFI)
+
+# HTTP GET request
+fn get(url: string) -> dict:
+    result = reqwest.get(url)
+    data = json.parse(result)
+    return data
+
+# HTTP POST request
+fn post(url: string, body: string) -> dict:
+    result = reqwest.post(url, body)
+    data = json.parse(result)
+    return data
+
+# HTTP PUT request
+fn put(url: string, body: string) -> dict:
+    result = reqwest.put(url, body)
+    data = json.parse(result)
+    return data
+
+# HTTP DELETE request
+fn delete(url: string) -> dict:
+    result = reqwest.delete(url)
+    data = json.parse(result)
+    return data
+
+# Helper: Get response status code
+fn status(response: dict) -> int:
+    if response["ok"]:
+        return response["status"]
+    return 0
+
+# Helper: Get response body
+fn body(response: dict) -> string:
+    if response["ok"]:
+        return response["body"]
+    return ""
+
+# Helper: Get response headers
+fn headers(response: dict) -> dict:
+    if response["ok"]:
+        return response["headers"]
+    return {}
+

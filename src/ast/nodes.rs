@@ -31,6 +31,7 @@ pub struct Function {
     pub params: Vec<Param>,
     pub ret_ty: Option<Type>,
     pub body: Block,
+    pub public: bool,
 }
 
 impl Function {
@@ -45,6 +46,22 @@ impl Function {
             params,
             ret_ty,
             body,
+            public: false,
+        }
+    }
+
+    pub fn new_public(
+        name: impl Into<String>,
+        params: Vec<Param>,
+        ret_ty: Option<Type>,
+        body: Block,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            params,
+            ret_ty,
+            body,
+            public: true,
         }
     }
 }
@@ -90,6 +107,7 @@ pub enum Statement {
     Let {
         name: String,
         expr: Expr,
+        public: bool,
     },
     Assignment {
         name: String,
@@ -119,6 +137,20 @@ pub enum Statement {
     // Function definitions
     Function(Function),
 
+    // Type definitions
+    Struct {
+        name: String,
+        fields: Vec<(String, Type)>,
+        public: bool,
+        generics: Vec<String>, // Generic type parameters
+    },
+    TypeAlias {
+        name: String,
+        target: Type,
+        public: bool,
+        generics: Vec<String>, // Generic type parameters
+    },
+
     // Expressions as statements
     Expr(Expr),
 
@@ -142,7 +174,9 @@ impl Statement {
             | Statement::Continue
             | Statement::Return(_)
             | Statement::Expr(_)
-            | Statement::Use { .. } => 1,
+            | Statement::Use { .. }
+            | Statement::Struct { .. }
+            | Statement::TypeAlias { .. } => 1,
 
             Statement::If {
                 then_block,
@@ -227,11 +261,21 @@ pub enum Expr {
         else_branch: Option<Box<Expr>>,
     },
 
+    // Match expressions (pattern matching)
+    Match {
+        value: Box<Expr>,
+        arms: Vec<MatchArm>,
+    },
+
     // Range expressions
     Range {
         start: Box<Expr>,
         end: Box<Expr>,
     },
+
+    // Collection literals
+    Array(Vec<Expr>),
+    Dict(Vec<(Expr, Expr)>), // Key-value pairs
 
     // String interpolation
     FString {
@@ -248,6 +292,35 @@ pub enum Expr {
     // Async operations
     Await(Box<Expr>),
     Spawn(Box<Expr>),
+}
+
+/// Match arm for pattern matching
+#[derive(Debug, Clone)]
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub guard: Option<Expr>,
+    pub body: Expr,
+}
+
+/// Pattern for match expressions
+#[derive(Debug, Clone)]
+pub enum Pattern {
+    /// Wildcard pattern (_)
+    Wildcard,
+    /// Literal pattern (1, true, "hello")
+    Literal(Literal),
+    /// Identifier pattern (binds to variable)
+    Identifier(String),
+    /// Tuple/struct pattern (Point { x, y })
+    Struct {
+        name: String,
+        fields: Vec<(String, Option<Pattern>)>, // field name and optional nested pattern
+    },
+    /// Array/list pattern ([a, b, ..rest])
+    Array {
+        patterns: Vec<Pattern>,
+        rest: Option<String>, // Variable name for rest pattern
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -289,6 +362,7 @@ pub enum Literal {
     String(String),
     Number(f64),
     Bool(bool),
+    Unit, // Unit literal ()
 }
 
 impl PartialEq for Literal {
@@ -297,6 +371,7 @@ impl PartialEq for Literal {
             (Literal::String(a), Literal::String(b)) => a == b,
             (Literal::Bool(a), Literal::Bool(b)) => a == b,
             (Literal::Number(a), Literal::Number(b)) => a.to_bits() == b.to_bits(), // Compare f64 by bits
+            (Literal::Unit, Literal::Unit) => true,
             _ => false,
         }
     }
@@ -320,6 +395,9 @@ impl Hash for Literal {
             Literal::Bool(b) => {
                 2u8.hash(state);
                 b.hash(state);
+            }
+            Literal::Unit => {
+                3u8.hash(state);
             }
         }
     }
