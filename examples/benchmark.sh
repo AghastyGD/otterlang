@@ -65,9 +65,13 @@ done
 echo -e "${YELLOW}OtterLang (otter --release):${NC}"
 OTTER_TIMES=()
 for i in {1..5}; do
-    # Run program and capture timing - time outputs to stderr, so we need to capture it properly
+    # Capture all output, then filter for the time line
     OUTPUT=$(/usr/bin/time -p ./pi_leibniz_otter 2>&1)
-    TIME=$(echo "$OUTPUT" | grep "^real" | awk '{print $2}')
+    TIME=$(echo "$OUTPUT" | grep -E "^real " | awk '{print $2}')
+    if [ -z "$TIME" ]; then
+        # Fallback: try to find real on any line
+        TIME=$(echo "$OUTPUT" | grep "real" | tail -1 | awk '{print $NF}')
+    fi
     OTTER_TIMES+=($TIME)
     echo "  Run $i: ${TIME}s"
 done
