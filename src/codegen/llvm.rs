@@ -193,13 +193,27 @@ pub fn build_executable(
     let native_triple = inkwell::targets::TargetMachine::get_default_triple();
     let native_str = native_triple.to_string();
     
-    // Use the native triple as-is (e.g., "arm64-apple-darwin25.0.0")
-    // LLVM recognizes the native triple format
-    let llvm_triple = inkwell::targets::TargetTriple::create(&native_str);
+    // Strip version suffix from triple (e.g., "arm64-apple-darwin25.0.0" -> "arm64-apple-darwin")
+    // LLVM recognizes the triple without the version suffix
+    let triple_str = if let Some(idx) = native_str.rfind('-') {
+        let before_last = &native_str[..idx];
+        // Check if the part after last '-' is a version number
+        let after_last = &native_str[idx+1..];
+        if after_last.chars().all(|c| c.is_ascii_digit() || c == '.') {
+            before_last.to_string()
+        } else {
+            native_str.clone()
+        }
+    } else {
+        native_str.clone()
+    };
+    
+    // Create inkwell TargetTriple using triple without version suffix
+    let llvm_triple = inkwell::targets::TargetTriple::create(&triple_str);
     compiler.module.set_triple(&llvm_triple);
 
     let target = Target::from_triple(&llvm_triple)
-        .map_err(|e| anyhow!("failed to create target from triple {}: {e}", native_str))?;
+        .map_err(|e| anyhow!("failed to create target from triple {} (original: {}): {e}", triple_str, native_str))?;
 
     let optimization: OptimizationLevel = options.opt_level.into();
     let target_machine = target
@@ -370,13 +384,27 @@ pub fn build_shared_library(
     let native_triple = inkwell::targets::TargetMachine::get_default_triple();
     let native_str = native_triple.to_string();
     
-    // Use the native triple as-is (e.g., "arm64-apple-darwin25.0.0")
-    // LLVM recognizes the native triple format
-    let llvm_triple = inkwell::targets::TargetTriple::create(&native_str);
+    // Strip version suffix from triple (e.g., "arm64-apple-darwin25.0.0" -> "arm64-apple-darwin")
+    // LLVM recognizes the triple without the version suffix
+    let triple_str = if let Some(idx) = native_str.rfind('-') {
+        let before_last = &native_str[..idx];
+        // Check if the part after last '-' is a version number
+        let after_last = &native_str[idx+1..];
+        if after_last.chars().all(|c| c.is_ascii_digit() || c == '.') {
+            before_last.to_string()
+        } else {
+            native_str.clone()
+        }
+    } else {
+        native_str.clone()
+    };
+    
+    // Create inkwell TargetTriple using triple without version suffix
+    let llvm_triple = inkwell::targets::TargetTriple::create(&triple_str);
     compiler.module.set_triple(&llvm_triple);
 
     let target = Target::from_triple(&llvm_triple)
-        .map_err(|e| anyhow!("failed to create target from triple {}: {e}", native_str))?;
+        .map_err(|e| anyhow!("failed to create target from triple {} (original: {}): {e}", triple_str, native_str))?;
 
     let optimization: OptimizationLevel = options.opt_level.into();
     let target_machine = target
