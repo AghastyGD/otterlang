@@ -2,7 +2,7 @@ fn calculate_pi(iterations: float) -> float:
     let pi = 0.0
     let sign = 1.0
     
-    let k = 0.0
+    let k = 0.1 - 0.1
     while k < iterations:
         let denominator = 2.0 * k + 1.0
         pi = pi + (sign / denominator)
