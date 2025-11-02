@@ -1,5 +1,14 @@
 # OtterLang 🦦
 
+<p>
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jonathanmagambo/otterlang/main/image.png" width="400">
+      <img src="https://raw.githubusercontent.com/jonathanmagambo/otterlang/main/image.png" width="400" alt="OtterLang Logo" />
+    </picture>
+    <br>
+    <strong>Simple like Python, fast with Rust, and everything in between.</strong>
+</p>
+
 An experimental indentation-sensitive programming language with an LLVM backend. OtterLang compiles to native binaries with a focus on simplicity and performance.
 
 ## Quick Setup
