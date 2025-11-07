@@ -39,12 +39,9 @@ An indentation-sensitive programming language with an LLVM backend. OtterLang co
 git clone https://github.com/jonathanmagambo/otterlang.git
 cd otterlang
 
-# Option 1: Using Nix (recommended)
+# Using Nix (recommended)
 nix develop
 cargo build --release
-
-# Option 2: Using setup script
-./setup.sh
 
 # Create and run your first program
 cat > hello.ot << 'EOF'
@@ -79,17 +76,19 @@ The Nix flake automatically provides Rust nightly, LLVM 15, and all dependencies
 brew install llvm@15
 export LLVM_SYS_150_PREFIX=$(brew --prefix llvm@15)
 export PATH="$LLVM_SYS_150_PREFIX/bin:$PATH"
-./setup.sh
+rustup toolchain install nightly
+rustup default nightly
+cargo build --release
 ```
 
 **Ubuntu/Debian:**
 ```bash
 sudo apt-get install -y llvm-15 llvm-15-dev clang-15
 export LLVM_SYS_150_PREFIX=/usr/lib/llvm-15
-./setup.sh
+rustup toolchain install nightly
+rustup default nightly
+cargo build --release
 ```
-
-The setup script automatically installs Rust nightly and configures the project.
 
 ## Language Features
 

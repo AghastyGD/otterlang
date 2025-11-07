@@ -12,15 +12,16 @@ cargo build --release
 ### Option 2: Manual Setup
 
 1. **Install prerequisites**:
-   - Rust (via rustup)
+   - Rust (via rustup) - nightly required for FFI features
    - LLVM 15 (see [README.md](README.md) for installation instructions)
 
 2. **Setup**:
    ```bash
-   ./setup.sh
+   rustup toolchain install nightly
+   rustup default nightly
+   export LLVM_SYS_150_PREFIX=/path/to/llvm-15  # Set based on your OS
+   cargo build --release
    ```
-
-The setup script automatically installs Rust nightly (required for FFI features) and configures the project.
 
 ### Building
 
