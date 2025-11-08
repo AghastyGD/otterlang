@@ -21,6 +21,7 @@ cargo build --release
    ```bash
    brew install llvm@18
    export LLVM_SYS_181_PREFIX=$(brew --prefix llvm@18)
+   export LLVM_SYS_180_PREFIX=$LLVM_SYS_181_PREFIX
    export PATH="$LLVM_SYS_181_PREFIX/bin:$PATH"
    rustup toolchain install nightly
    rustup default nightly
@@ -31,6 +32,7 @@ cargo build --release
    ```bash
    sudo apt-get install -y llvm-18 llvm-18-dev clang-18
    export LLVM_SYS_181_PREFIX=/usr/lib/llvm-18
+   export LLVM_SYS_180_PREFIX=$LLVM_SYS_181_PREFIX
    rustup toolchain install nightly
    rustup default nightly
    cargo build --release
@@ -45,6 +47,7 @@ cargo build --release
 
    # Set environment variables (adjust path if LLVM is installed elsewhere)
    $env:LLVM_SYS_181_PREFIX = "C:\Program Files\LLVM"
+   $env:LLVM_SYS_180_PREFIX = $env:LLVM_SYS_181_PREFIX
    $env:Path = "$env:LLVM_SYS_181_PREFIX\bin;$env:Path"
 
    # Install Rust nightly

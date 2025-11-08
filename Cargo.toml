@@ -18,7 +18,7 @@ path = "src/main.rs"
 
 [[bin]]
 name = "otter"
-path = "src/main.rs"
+path = "src/bin/otter.rs"
 
 [features]
 default = []
@@ -71,3 +71,6 @@ resolver = "3"
 members = [
     "crates/*"
 ]
+
+[patch.crates-io]
+llvm-sys = { path = "vendor/llvm-sys" }

@@ -777,7 +777,7 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
         symbol_registry: &'static SymbolRegistry,
         expr_types: &'types HashMap<usize, TypeInfo>,
     ) -> Self {
-        let string_ptr_type = context.i8_type().ptr_type(AddressSpace::default());
+        let string_ptr_type = context.ptr_type(AddressSpace::default());
 
         Self {
             context,
@@ -921,7 +921,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             let alloca = self
                 .builder
                 .build_alloca(self.basic_type(param_ty)?, &param.name)?;
-            self.builder.build_store(alloca, param_value);
+            self.builder
+                .build_store(alloca, param_value)
+                .expect("store function parameter");
             ctx.insert(
                 param.name.clone(),
                 Variable {
@@ -949,25 +951,35 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             };
 
             if ret_type == OtterType::Unit {
-                self.builder.build_return(None);
+                self.builder
+                    .build_return(None)
+                    .expect("default unit return");
             } else {
                 // Default return for non-void functions
                 match ret_type {
                     OtterType::I32 => {
                         let val = self.context.i32_type().const_zero();
-                        self.builder.build_return(Some(&val));
+                        self.builder
+                            .build_return(Some(&val))
+                            .expect("default i32 return");
                     }
                     OtterType::I64 => {
                         let val = self.context.i64_type().const_zero();
-                        self.builder.build_return(Some(&val));
+                        self.builder
+                            .build_return(Some(&val))
+                            .expect("default i64 return");
                     }
                     OtterType::F64 => {
                         let val = self.context.f64_type().const_zero();
-                        self.builder.build_return(Some(&val));
+                        self.builder
+                            .build_return(Some(&val))
+                            .expect("default f64 return");
                     }
                     OtterType::Bool => {
                         let val = self.context.bool_type().const_zero();
-                        self.builder.build_return(Some(&val));
+                        self.builder
+                            .build_return(Some(&val))
+                            .expect("default bool return");
                     }
                     _ => bail!("unsupported return type"),
                 };
@@ -1111,7 +1123,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
                     (alloca, value)
                 };
 
-                self.builder.build_store(alloca, needs_coercion);
+                self.builder
+                    .build_store(alloca, needs_coercion)
+                    .expect("store coerced assignment");
                 Ok(())
             }
             Statement::If {
@@ -1215,7 +1229,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
                     // Allocate loop variable
                     let loop_var_type = self.basic_type(loop_ty)?;
                     let loop_var_ptr = self.builder.build_alloca(loop_var_type, var)?;
-                    self.builder.build_store(loop_var_ptr, start_num);
+                    self.builder
+                        .build_store(loop_var_ptr, start_num)
+                        .expect("initialize loop var");
                     ctx.insert(
                         var.clone(),
                         Variable {
@@ -1225,7 +1241,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
                     );
 
                     // Jump to loop header
-                    self.builder.build_unconditional_branch(loop_header);
+                    self.builder
+                        .build_unconditional_branch(loop_header)
+                        .expect("loop continue branch");
 
                     // Loop header: check condition
                     self.builder.position_at_end(loop_header);
@@ -1249,7 +1267,8 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
                         )
                     }?;
                     self.builder
-                        .build_conditional_branch(cond, loop_body, loop_end);
+                        .build_conditional_branch(cond, loop_body, loop_end)
+                        .expect("for loop condition branch");
 
                     // Loop body
                     self.builder.position_at_end(loop_body);
@@ -1272,8 +1291,12 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
                             .build_int_add(current.into_int_value(), one, "next")?
                             .into()
                     };
-                    self.builder.build_store(loop_var_ptr, next);
-                    self.builder.build_unconditional_branch(loop_header);
+                    self.builder
+                        .build_store(loop_var_ptr, next)
+                        .expect("update loop var");
+                    self.builder
+                        .build_unconditional_branch(loop_header)
+                        .expect("loop head jump");
 
                     // Pop loop context
                     ctx.pop_loop();
@@ -1288,7 +1311,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             Statement::While { cond, body } => self.lower_while_loop(_function, ctx, cond, body),
             Statement::Break => {
                 if let Some(loop_ctx) = ctx.current_loop() {
-                    self.builder.build_unconditional_branch(loop_ctx.break_bb);
+                    self.builder
+                        .build_unconditional_branch(loop_ctx.break_bb)
+                        .expect("loop break branch");
                     // Create a new unreachable block to continue code generation
                     let unreachable_bb = self.context.append_basic_block(_function, "unreachable");
                     self.builder.position_at_end(unreachable_bb);
@@ -1300,7 +1325,8 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             Statement::Continue => {
                 if let Some(loop_ctx) = ctx.current_loop() {
                     self.builder
-                        .build_unconditional_branch(loop_ctx.continue_bb);
+                        .build_unconditional_branch(loop_ctx.continue_bb)
+                        .expect("loop continue branch");
                     // Create a new unreachable block to continue code generation
                     let unreachable_bb = self.context.append_basic_block(_function, "unreachable");
                     self.builder.position_at_end(unreachable_bb);
@@ -1410,9 +1436,13 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
                             .ok_or_else(|| anyhow!("return expression has no value"))?
                     };
 
-                    self.builder.build_return(Some(&return_value));
+                    self.builder
+                        .build_return(Some(&return_value))
+                        .expect("return value from function");
                 } else {
-                    self.builder.build_return(None);
+                    self.builder
+                        .build_return(None)
+                        .expect("return void from function");
                 }
                 Ok(())
             }
@@ -1476,7 +1506,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
                     .value
                     .clone()
                     .ok_or_else(|| anyhow!("expected value for assignment to `{name}`"))?;
-                self.builder.build_store(ptr, value);
+                self.builder
+                    .build_store(ptr, value)
+                    .expect("store coerced value");
                 Ok(())
             }
             Statement::Struct { .. } => {
@@ -1595,7 +1627,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
 
                 // Ensure the function returns (add return if not present)
                 if lambda_bb.get_terminator().is_none() {
-                    self.builder.build_return(None);
+                    self.builder
+                        .build_return(None)
+                        .expect("emit implicit unit return");
                 }
 
                 // Restore original builder position if it exists
@@ -1715,7 +1749,8 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             .into_int_value();
 
         self.builder
-            .build_conditional_branch(cond_bool, then_bb, else_bb);
+            .build_conditional_branch(cond_bool, then_bb, else_bb)
+            .expect("conditional expression branch");
 
         // Evaluate then expression
         self.builder.position_at_end(then_bb);
@@ -1723,12 +1758,16 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
         let then_result_ptr = if let Some(value) = then_value.value {
             let result_type = self.basic_type(then_value.ty)?;
             let result_ptr = self.builder.build_alloca(result_type, "then_result")?;
-            self.builder.build_store(result_ptr, value);
+            self.builder
+                .build_store(result_ptr, value)
+                .expect("store match result");
             Some(result_ptr)
         } else {
             None
         };
-        self.builder.build_unconditional_branch(merge_bb);
+        self.builder
+            .build_unconditional_branch(merge_bb)
+            .expect("then to merge branch");
 
         // Evaluate else expression
         self.builder.position_at_end(else_bb);
@@ -1744,12 +1783,16 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
         let else_result_ptr = if let Some(value) = else_value.value {
             let result_type = self.basic_type(else_value.ty)?;
             let result_ptr = self.builder.build_alloca(result_type, "else_result")?;
-            self.builder.build_store(result_ptr, value);
+            self.builder
+                .build_store(result_ptr, value)
+                .expect("store then branch value");
             Some(result_ptr)
         } else {
             None
         };
-        self.builder.build_unconditional_branch(merge_bb);
+        self.builder
+            .build_unconditional_branch(merge_bb)
+            .expect("else to merge branch");
 
         // Merge the results
         self.builder.position_at_end(merge_bb);
@@ -2640,18 +2683,21 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             (OtterType::Str, Some(val)) => {
                 let append_fn = self.declare_symbol_function("append<list,string>")?;
                 self.builder
-                    .build_call(append_fn, &[handle.into(), val.into()], "");
+                    .build_call(append_fn, &[handle.into(), val.into()], "")
+                    .expect("append string");
             }
             (OtterType::F64, Some(val)) => {
                 let append_fn = self.declare_symbol_function("append<list,float>")?;
                 self.builder
-                    .build_call(append_fn, &[handle.into(), val.into()], "");
+                    .build_call(append_fn, &[handle.into(), val.into()], "")
+                    .expect("append float");
             }
             (OtterType::I64, Some(val)) => {
                 let int_val = val.into_int_value();
                 let append_fn = self.declare_symbol_function("append<list,int>")?;
                 self.builder
-                    .build_call(append_fn, &[handle.into(), int_val.into()], "");
+                    .build_call(append_fn, &[handle.into(), int_val.into()], "")
+                    .expect("append i64");
             }
             (OtterType::I32, Some(val)) => {
                 let int_val = val.into_int_value();
@@ -2662,25 +2708,29 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
                 )?;
                 let append_fn = self.declare_symbol_function("append<list,int>")?;
                 self.builder
-                    .build_call(append_fn, &[handle.into(), extended.into()], "");
+                    .build_call(append_fn, &[handle.into(), extended.into()], "")
+                    .expect("append i32 as i64");
             }
             (OtterType::Bool, Some(val)) => {
                 let bool_val = val.into_int_value();
                 let append_fn = self.declare_symbol_function("append<list,bool>")?;
                 self.builder
-                    .build_call(append_fn, &[handle.into(), bool_val.into()], "");
+                    .build_call(append_fn, &[handle.into(), bool_val.into()], "")
+                    .expect("append bool");
             }
             (OtterType::List, Some(val)) => {
                 let list_handle = val.into_int_value();
                 let append_fn = self.declare_symbol_function("append<list,list>")?;
                 self.builder
-                    .build_call(append_fn, &[handle.into(), list_handle.into()], "");
+                    .build_call(append_fn, &[handle.into(), list_handle.into()], "")
+                    .expect("append list");
             }
             (OtterType::Map, Some(val)) => {
                 let map_handle = val.into_int_value();
                 let append_fn = self.declare_symbol_function("append<list,map>")?;
                 self.builder
-                    .build_call(append_fn, &[handle.into(), map_handle.into()], "");
+                    .build_call(append_fn, &[handle.into(), map_handle.into()], "")
+                    .expect("append map");
             }
             (ty, _) => {
                 bail!("unsupported list element type: {:?}", ty);
@@ -2705,18 +2755,21 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             (OtterType::Str, Some(val)) => {
                 let set_fn = self.declare_symbol_function("map.set")?;
                 self.builder
-                    .build_call(set_fn, &[handle.into(), key_arg, val.into()], "");
+                    .build_call(set_fn, &[handle.into(), key_arg, val.into()], "")
+                    .expect("set map string");
             }
             (OtterType::F64, Some(val)) => {
                 let set_fn = self.declare_symbol_function("set<map,float>")?;
                 self.builder
-                    .build_call(set_fn, &[handle.into(), key_arg, val.into()], "");
+                    .build_call(set_fn, &[handle.into(), key_arg, val.into()], "")
+                    .expect("set map float");
             }
             (OtterType::I64, Some(val)) => {
                 let int_val = val.into_int_value();
                 let set_fn = self.declare_symbol_function("set<map,int>")?;
                 self.builder
-                    .build_call(set_fn, &[handle.into(), key_arg, int_val.into()], "");
+                    .build_call(set_fn, &[handle.into(), key_arg, int_val.into()], "")
+                    .expect("set map int");
             }
             (OtterType::I32, Some(val)) => {
                 let int_val = val.into_int_value();
@@ -2727,25 +2780,29 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
                 )?;
                 let set_fn = self.declare_symbol_function("set<map,int>")?;
                 self.builder
-                    .build_call(set_fn, &[handle.into(), key_arg, extended.into()], "");
+                    .build_call(set_fn, &[handle.into(), key_arg, extended.into()], "")
+                    .expect("set map i32");
             }
             (OtterType::Bool, Some(val)) => {
                 let bool_val = val.into_int_value();
                 let set_fn = self.declare_symbol_function("set<map,bool>")?;
                 self.builder
-                    .build_call(set_fn, &[handle.into(), key_arg, bool_val.into()], "");
+                    .build_call(set_fn, &[handle.into(), key_arg, bool_val.into()], "")
+                    .expect("set map bool");
             }
             (OtterType::List, Some(val)) => {
                 let list_handle = val.into_int_value();
                 let set_fn = self.declare_symbol_function("set<map,list>")?;
                 self.builder
-                    .build_call(set_fn, &[handle.into(), key_arg, list_handle.into()], "");
+                    .build_call(set_fn, &[handle.into(), key_arg, list_handle.into()], "")
+                    .expect("set map list");
             }
             (OtterType::Map, Some(val)) => {
                 let map_handle = val.into_int_value();
                 let set_fn = self.declare_symbol_function("set<map,map>")?;
                 self.builder
-                    .build_call(set_fn, &[handle.into(), key_arg, map_handle.into()], "");
+                    .build_call(set_fn, &[handle.into(), key_arg, map_handle.into()], "")
+                    .expect("set map map");
             }
             (ty, _) => bail!("unsupported dictionary value type: {:?}", ty),
         }
@@ -2995,7 +3052,8 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             .builder
             .build_alloca(self.context.i64_type(), "list_comp_index")?;
         self.builder
-            .build_store(index_alloca, self.context.i64_type().const_int(0, false));
+            .build_store(index_alloca, self.context.i64_type().const_int(0, false))
+            .expect("init loop index");
 
         let iterable_type_info = self
             .expr_type(iterable)
@@ -3044,7 +3102,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
                 .append_basic_block(parent_function, "list_comp_append")
         });
 
-        self.builder.build_unconditional_branch(header_bb);
+        self.builder
+            .build_unconditional_branch(header_bb)
+            .expect("jump to loop header");
 
         self.builder.position_at_end(header_bb);
         let current_index = self
@@ -3057,7 +3117,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             len_value,
             "list_comp_cond",
         )?;
-        self.builder.build_conditional_branch(cond, body_bb, end_bb);
+        self.builder
+            .build_conditional_branch(cond, body_bb, end_bb)
+            .expect("list loop condition");
 
         self.builder.position_at_end(body_bb);
         let loop_index = self
@@ -3067,7 +3129,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
         let element_value =
             self.load_list_element(&iterable_type_info, iterable_handle, loop_index)?;
         if let Some(value_basic) = element_value.value.clone() {
-            self.builder.build_store(var_alloca, value_basic);
+        self.builder
+            .build_store(var_alloca, value_basic)
+            .expect("store comprehension value");
         }
 
         if let Some(cond_expr) = condition {
@@ -3075,13 +3139,16 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             let cond_bool = self.to_bool_value(cond_value)?;
             let append_block = append_bb.expect("append block missing");
             self.builder
-                .build_conditional_branch(cond_bool, append_block, incr_bb);
+                .build_conditional_branch(cond_bool, append_block, incr_bb)
+                .expect("list loop append branch");
             self.builder.position_at_end(append_block);
         }
 
         let result_element = self.eval_expr(element, ctx)?;
         self.append_list_element(result_handle, result_element)?;
-        self.builder.build_unconditional_branch(incr_bb);
+        self.builder
+            .build_unconditional_branch(incr_bb)
+            .expect("jump to increment block");
 
         self.builder.position_at_end(incr_bb);
         let idx_val = self
@@ -3093,8 +3160,12 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             self.context.i64_type().const_int(1, false),
             "list_comp_next_idx",
         )?;
-        self.builder.build_store(index_alloca, next_idx);
-        self.builder.build_unconditional_branch(header_bb);
+        self.builder
+            .build_store(index_alloca, next_idx)
+            .expect("update index");
+        self.builder
+            .build_unconditional_branch(header_bb)
+            .expect("loop header branch");
 
         self.builder.position_at_end(end_bb);
 
@@ -3150,7 +3221,8 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             .builder
             .build_alloca(self.context.i64_type(), "dict_comp_index")?;
         self.builder
-            .build_store(index_alloca, self.context.i64_type().const_int(0, false));
+            .build_store(index_alloca, self.context.i64_type().const_int(0, false))
+            .expect("init second loop index");
 
         let iterable_type_info = self
             .expr_type(iterable)
@@ -3199,7 +3271,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
                 .append_basic_block(parent_function, "dict_comp_append")
         });
 
-        self.builder.build_unconditional_branch(header_bb);
+        self.builder
+            .build_unconditional_branch(header_bb)
+            .expect("map loop header branch");
 
         self.builder.position_at_end(header_bb);
         let current_index = self
@@ -3212,7 +3286,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             len_value,
             "dict_comp_cond",
         )?;
-        self.builder.build_conditional_branch(cond, body_bb, end_bb);
+        self.builder
+            .build_conditional_branch(cond, body_bb, end_bb)
+            .expect("dict loop condition");
 
         self.builder.position_at_end(body_bb);
         let loop_index = self
@@ -3222,7 +3298,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
         let element_value =
             self.load_list_element(&iterable_type_info, iterable_handle, loop_index)?;
         if let Some(value_basic) = element_value.value.clone() {
-            self.builder.build_store(var_alloca, value_basic);
+        self.builder
+            .build_store(var_alloca, value_basic)
+            .expect("store list value");
         }
 
         if let Some(cond_expr) = condition {
@@ -3230,14 +3308,17 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             let cond_bool = self.to_bool_value(cond_value)?;
             let append_block = append_bb.expect("append block missing");
             self.builder
-                .build_conditional_branch(cond_bool, append_block, incr_bb);
+                .build_conditional_branch(cond_bool, append_block, incr_bb)
+                .expect("dict loop append branch");
             self.builder.position_at_end(append_block);
         }
 
         let key_value = self.eval_expr(key, ctx)?;
         let value_value = self.eval_expr(value, ctx)?;
         self.set_map_entry(result_handle, key_value, value_value)?;
-        self.builder.build_unconditional_branch(incr_bb);
+        self.builder
+            .build_unconditional_branch(incr_bb)
+            .expect("map loop increment branch");
 
         self.builder.position_at_end(incr_bb);
         let idx_val = self
@@ -3249,8 +3330,12 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             self.context.i64_type().const_int(1, false),
             "dict_comp_next_idx",
         )?;
-        self.builder.build_store(index_alloca, next_idx);
-        self.builder.build_unconditional_branch(header_bb);
+        self.builder
+            .build_store(index_alloca, next_idx)
+            .expect("advance list index");
+        self.builder
+            .build_unconditional_branch(header_bb)
+            .expect("map loop header");
 
         self.builder.position_at_end(end_bb);
 
@@ -3416,7 +3501,8 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
                     // Free the previous result if it was dynamically allocated
                     if need_free_result {
                         self.builder
-                            .build_call(free_fn, &[result_ptr.into()], "free_old");
+                            .build_call(free_fn, &[result_ptr.into()], "free_old")
+                            .expect("free concatenated segment");
                     }
 
                     result_ptr = new_result;
@@ -3508,13 +3594,15 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
                     // Free the previous result if it was dynamically allocated
                     if need_free_result {
                         self.builder
-                            .build_call(free_fn, &[result_ptr.into()], "free_old");
+                            .build_call(free_fn, &[result_ptr.into()], "free_old")
+                            .expect("free previous formatted chunk");
                     }
 
                     // Free the formatted string (always dynamically allocated)
                     if !matches!(evaluated.ty, OtterType::Str) {
                         self.builder
-                            .build_call(free_fn, &[formatted_ptr.into()], "free_formatted");
+                            .build_call(free_fn, &[formatted_ptr.into()], "free_formatted")
+                            .expect("free formatted expr");
                     }
 
                     result_ptr = new_result;
@@ -3580,7 +3668,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
         ctx.push_loop(cond_bb, exit_bb);
 
         // Jump to condition check
-        self.builder.build_unconditional_branch(cond_bb);
+        self.builder
+            .build_unconditional_branch(cond_bb)
+            .expect("while loop branch");
 
         // Generate condition block
         self.builder.position_at_end(cond_bb);
@@ -3595,7 +3685,8 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             .into_int_value();
 
         self.builder
-            .build_conditional_branch(cond_bool, body_bb, exit_bb);
+            .build_conditional_branch(cond_bool, body_bb, exit_bb)
+            .expect("while branch");
 
         // Generate loop body
         self.builder.position_at_end(body_bb);
@@ -3610,7 +3701,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             .and_then(|b| b.get_terminator())
             .is_none()
         {
-            self.builder.build_unconditional_branch(cond_bb);
+            self.builder
+                .build_unconditional_branch(cond_bb)
+                .expect("while loop continue branch");
         }
 
         // Pop loop context
@@ -3648,7 +3741,8 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
         // Handle elif chains
         let mut current_else_bb = self.context.append_basic_block(function, "else_start");
         self.builder
-            .build_conditional_branch(cond_bool, then_bb, current_else_bb);
+            .build_conditional_branch(cond_bool, then_bb, current_else_bb)
+            .expect("if/elif branch");
 
         // Generate then block
         self.builder.position_at_end(then_bb);
@@ -3661,7 +3755,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             .and_then(|b| b.get_terminator())
             .is_none()
         {
-            self.builder.build_unconditional_branch(merge_bb);
+            self.builder
+                .build_unconditional_branch(merge_bb)
+                .expect("elseif to merge branch");
         }
 
         // Generate elif/else chain
@@ -3692,8 +3788,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
                 .ok_or_else(|| anyhow!("missing elif condition value"))?
                 .into_int_value();
 
-            self.builder
-                .build_conditional_branch(elif_cond_bool, elif_then_bb, next_bb);
+                self.builder
+                    .build_conditional_branch(elif_cond_bool, elif_then_bb, next_bb)
+                    .expect("elif branch");
 
             // Generate elif then block
             self.builder.position_at_end(elif_then_bb);
@@ -3706,7 +3803,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
                 .and_then(|b| b.get_terminator())
                 .is_none()
             {
-                self.builder.build_unconditional_branch(merge_bb);
+                self.builder
+                    .build_unconditional_branch(merge_bb)
+                    .expect("elif fallthrough");
             }
 
             current_else_bb = next_bb;
@@ -3726,7 +3825,9 @@ impl<'ctx, 'types> Compiler<'ctx, 'types> {
             .and_then(|b| b.get_terminator())
             .is_none()
         {
-            self.builder.build_unconditional_branch(merge_bb);
+            self.builder
+                .build_unconditional_branch(merge_bb)
+                .expect("else to merge");
         }
 
         // Continue after if

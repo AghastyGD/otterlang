@@ -11,6 +11,7 @@ on:
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -48,21 +49,20 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
-            throw "cargo is required to install llvmenv"
-          }
-
-          Write-Host "Installing llvmenv"
-          cargo install llvmenv --locked
-
           $llvmVersion = "18.1.8"
-          Write-Host "Building LLVM $llvmVersion via llvmenv"
-          llvmenv install $llvmVersion
-          llvmenv global $llvmVersion
+          $archive = "clang+llvm-$llvmVersion-x86_64-pc-windows-msvc.tar.xz"
+          $downloadUrl = "https://github.com/llvm/llvm-project/releases/download/llvmorg-$llvmVersion/$archive"
+          $downloadPath = Join-Path $env:RUNNER_TEMP $archive
 
-          $llvmPath = llvmenv prefix
-          if (-not $llvmPath) {
-            throw "llvmenv prefix returned an empty path"
+          Write-Host "Downloading LLVM $llvmVersion from $downloadUrl"
+          Invoke-WebRequest -Uri $downloadUrl -OutFile $downloadPath -UseBasicParsing
+
+          Write-Host "Extracting archive"
+          tar -C $env:RUNNER_TEMP -xf $downloadPath
+
+          $llvmPath = Join-Path $env:RUNNER_TEMP "clang+llvm-$llvmVersion-x86_64-pc-windows-msvc"
+          if (-not (Test-Path $llvmPath)) {
+            throw "Failed to extract LLVM archive to $llvmPath"
           }
 
           $llvmBin = Join-Path $llvmPath "bin"
