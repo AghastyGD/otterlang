@@ -240,10 +240,6 @@ fn nested_exceptions():
 - Zero-cost abstractions (no overhead on success path)
 - Type-safe error handling at compile time
 
-## Performance
-
-**Note:** Benchmarks are currently being retested and properly specified. Comprehensive performance metrics will be available in a future update. OtterLang compiles to native code via LLVM and is designed for high performance, with automatic memory management and zero-cost abstractions.
-
 ## CLI Commands
 
 ```bash
