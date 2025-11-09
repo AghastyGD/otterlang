@@ -1113,6 +1113,13 @@ dependencies = [
 [[package]]
 name = "module"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ast",
+ "lexer",
+ "parser",
+ "tempfile",
+]
 
 [[package]]
 name = "ntapi"
