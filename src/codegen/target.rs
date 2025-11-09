@@ -292,7 +292,9 @@ char* otter_normalize_text(const char* input) {
     size_t len = strlen(input);
     if (otter_is_valid_utf8((const unsigned char*)input, len)) {
         char* result = (char*)malloc(len + 1);
-        if (result) strcpy(result, input);
+        if (result) {
+            memcpy(result, input, len + 1);
+        }
         return result;
     }
     char* result = (char*)malloc(len * 3 + 1);
@@ -397,8 +399,11 @@ char* otter_format_int(int64_t value) {
 
 char* otter_format_bool(bool value) {
     const char* str = value ? "true" : "false";
-    char* buffer = (char*)malloc(strlen(str) + 1);
-    if (buffer) strcpy(buffer, str);
+    size_t len = strlen(str);
+    char* buffer = (char*)malloc(len + 1);
+    if (buffer) {
+        memcpy(buffer, str, len + 1);
+    }
     return buffer;
 }
 
@@ -407,8 +412,8 @@ char* otter_concat_strings(const char* s1, const char* s2) {
     size_t len1 = strlen(s1), len2 = strlen(s2);
     char* result = (char*)malloc(len1 + len2 + 1);
     if (result) {
-        strcpy(result, s1);
-        strcat(result, s2);
+        memcpy(result, s1, len1);
+        memcpy(result + len1, s2, len2 + 1);
     }
     return result;
 }
@@ -487,7 +492,9 @@ char* otter_builtin_stringify_float(double value) {
 char* otter_builtin_stringify_bool(int value) {
     char* buffer = (char*)malloc(6);
     if (buffer) {
-        strcpy(buffer, value ? "true" : "false");
+        const char* str = value ? "true" : "false";
+        size_t len = value ? 4 : 5;
+        memcpy(buffer, str, len + 1);
     }
     return buffer;
 }
@@ -681,7 +688,9 @@ char* otter_normalize_text(const char* input) {
     size_t len = strlen(input);
     if (otter_is_valid_utf8((const unsigned char*)input, len)) {
         char* result = (char*)malloc(len + 1);
-        if (result) strcpy(result, input);
+        if (result) {
+            memcpy(result, input, len + 1);
+        }
         return result;
     }
     char* result = (char*)malloc(len * 3 + 1);
