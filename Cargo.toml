@@ -30,6 +30,7 @@ common.path = "crates/common"
 utils.path = "crates/utils"
 lexer.path = "crates/lexer"
 cache.path = "crates/cache"
+ffi.path = "crates/ffi"
 
 anyhow = "1.0"
 tempfile = "3.10"
