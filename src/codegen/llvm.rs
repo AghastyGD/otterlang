@@ -18,12 +18,11 @@ use inkwell::AddressSpace;
 use inkwell::OptimizationLevel;
 
 use crate::codegen::target::TargetTriple;
-use crate::ffi::{BridgeSymbolRegistry, CargoBridge, DynamicLibraryLoader, FunctionSpec, TypeSpec};
-use crate::runtime::ffi;
 use crate::runtime::ffi::register_dynamic_exports;
 use crate::runtime::symbol_registry::{FfiFunction, FfiSignature, FfiType, SymbolRegistry};
 use crate::typecheck::TypeInfo;
 use ast::nodes::{BinaryOp, Block, Expr, Function, Literal, Program, Statement, Type};
+use ffi::{BridgeSymbolRegistry, CargoBridge, DynamicLibraryLoader, FunctionSpec, TypeSpec};
 use libloading::Library;
 
 pub struct CodegenOptions {
@@ -215,7 +214,7 @@ pub fn build_executable(
     let context = LlvmContext::create();
     let module = context.create_module("otter");
     let builder = context.create_builder();
-    let registry = ffi::bootstrap_stdlib();
+    let registry = crate::runtime::ffi::bootstrap_stdlib();
     let bridge_libraries = prepare_rust_bridges(program, registry)?;
     let mut compiler = Compiler::new(&context, module, builder, registry, expr_types);
 
