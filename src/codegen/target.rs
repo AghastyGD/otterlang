@@ -119,12 +119,23 @@ impl TargetTriple {
         )
     }
 
-    /// Get the appropriate linker for this target
+    /// Get the appropriate C compiler for this target
+    pub fn c_compiler(&self) -> String {
+        if self.is_wasm() || self.is_windows() {
+            // Prefer clang so we have a consistent driver that accepts Unix-style flags
+            "clang".to_string()
+        } else {
+            "cc".to_string()
+        }
+    }
+
+    /// Get the appropriate linker driver for this target
     pub fn linker(&self) -> String {
         if self.is_wasm() {
             "wasm-ld".to_string()
         } else if self.is_windows() {
-            "link.exe".to_string()
+            // Use clang as the linker driver so we can keep passing POSIX-style flags
+            "clang".to_string()
         } else {
             "cc".to_string()
         }
@@ -141,8 +152,8 @@ impl TargetTriple {
                 flags.push("--allow-undefined".to_string());
             }
         } else if self.is_windows() {
-            // Windows linker flags
-            flags.push("/SUBSYSTEM:CONSOLE".to_string());
+            // Pass subsystem settings through clang to the MSVC linker
+            flags.push("-Wl,/SUBSYSTEM:CONSOLE".to_string());
         } else if self.is_embedded() {
             // Embedded targets typically use custom link scripts
             flags.push("-nostdlib".to_string());

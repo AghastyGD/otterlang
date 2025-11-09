@@ -322,6 +322,7 @@ fn expr_parser() -> impl Parser<TokenKind, Expr, Error = Simple<TokenKind>> {
                     .then_ignore(just(TokenKind::Equals))
                     .then(expr.clone())
                     .separated_by(just(TokenKind::Comma))
+                    .at_least(1)
                     .allow_trailing()
                     .delimited_by(just(TokenKind::LParen), just(TokenKind::RParen)),
             )

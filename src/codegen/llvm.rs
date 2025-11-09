@@ -296,8 +296,8 @@ pub fn build_executable(
 
     // Compile the runtime C file (target-specific)
     let runtime_o = output.with_extension("runtime.o");
-    let linker = runtime_triple.linker();
-    let mut cc = Command::new(&linker);
+    let compiler = runtime_triple.c_compiler();
+    let mut cc = Command::new(&compiler);
 
     // Add target-specific compiler flags
     if runtime_triple.is_wasm() {
@@ -349,7 +349,7 @@ pub fn build_executable(
         cc.arg(&flag);
     }
 
-    if options.enable_lto {
+    if options.enable_lto && !runtime_triple.is_wasm() {
         cc.arg("-flto");
         // Note: clang doesn't support -flto=O2/O3, use -O flags instead
         match options.opt_level {
@@ -364,7 +364,7 @@ pub fn build_executable(
     }
 
     // PGO support: if profile file is provided, use it for optimization
-    if options.enable_pgo {
+    if options.enable_pgo && !runtime_triple.is_wasm() {
         if let Some(ref profile_file) = options.pgo_profile_file {
             cc.arg("-fprofile-use");
             cc.arg(profile_file);
@@ -487,15 +487,17 @@ pub fn build_shared_library(
 
     // Compile runtime C file (target-specific)
     let runtime_o = output.with_extension("runtime.o");
-    let linker = runtime_triple.linker();
-    let mut cc = Command::new(&linker);
+    let compiler = runtime_triple.c_compiler();
+    let mut cc = Command::new(&compiler);
 
     // Add target-specific compiler flags
     if runtime_triple.is_wasm() {
         cc.arg("--target").arg(&native_str).arg("-c");
     } else {
         cc.arg("-c");
-        cc.arg("-fPIC"); // Position-independent code for shared library
+        if runtime_triple.needs_pic() && !runtime_triple.is_windows() {
+            cc.arg("-fPIC");
+        }
         if options.target.is_some() {
             cc.arg("--target").arg(&native_str);
         }
@@ -539,9 +541,11 @@ pub fn build_shared_library(
             .arg(&lib_path)
             .arg(&object_path);
     } else {
-        cc.arg("-shared")
-            .arg("-fPIC")
-            .arg("-o")
+        cc.arg("-shared");
+        if runtime_triple.needs_pic() {
+            cc.arg("-fPIC");
+        }
+        cc.arg("-o")
             .arg(&lib_path)
             .arg(&object_path)
             .arg(&runtime_o);
@@ -556,7 +560,7 @@ pub fn build_shared_library(
         cc.arg(&flag);
     }
 
-    if options.enable_lto {
+    if options.enable_lto && !runtime_triple.is_wasm() {
         cc.arg("-flto");
         // Note: clang doesn't support -flto=O2/O3, use -O flags instead
         match options.opt_level {
@@ -571,7 +575,7 @@ pub fn build_shared_library(
     }
 
     // PGO support: if profile file is provided, use it for optimization
-    if options.enable_pgo {
+    if options.enable_pgo && !runtime_triple.is_wasm() {
         if let Some(ref profile_file) = options.pgo_profile_file {
             cc.arg("-fprofile-use");
             cc.arg(profile_file);

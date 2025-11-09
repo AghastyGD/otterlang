@@ -70,6 +70,6 @@ fn main():
     fmt.println("Exception Handling - Data Validation & APIs")
     fmt.println("==========================================")
     let valid_users = process_users()
-    fmt.println("Successfully validated users count: " + 1) )
+    fmt.println("Successfully validated users count: " + stringify(len(valid_users)))
     fmt.println()
     api_processing_demo()
