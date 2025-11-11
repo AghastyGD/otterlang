@@ -589,36 +589,12 @@ impl LanguageServer for Backend {
         Ok(Some(CompletionResponse::Array(items)))
     }
 
-    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
-        let uri = params.text_document.uri;
-        let (text, symbol_table) = {
-            let state = self.state.read().await;
-            let text = state.documents.get(&uri).cloned();
-            let symbol_table = state.symbol_tables.get(&uri).cloned();
-            (text, symbol_table)
-        };
+    async fn inlay_hint(&self, _params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+        Ok(Some(Vec::new()))
+    }
 
-        let mut hints = Vec::new();
-        if let (Some(text), Some(symbol_table)) = (text, symbol_table) {
-            for (_name, info) in symbol_table.all_symbols() {
-                if let Some(ty) = &info.ty {
-                    if matches!(info.kind, SymbolKind::Variable | SymbolKind::Parameter) {
-                        hints.push(InlayHint {
-                            position: span_to_position(info.span.start(), &text),
-                            label: InlayHintLabel::String(format!(": {}", ty)),
-                            kind: Some(InlayHintKind::TYPE),
-                            text_edits: None,
-                            tooltip: None,
-                            padding_left: Some(false),
-                            padding_right: Some(false),
-                            data: None,
-                        });
-                    }
-                }
-            }
-        }
-
-        Ok(Some(hints))
+    async fn inlay_hint_resolve(&self, hint: InlayHint) -> Result<InlayHint> {
+        Ok(hint)
     }
 
     async fn semantic_tokens_full(

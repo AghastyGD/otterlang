@@ -8,7 +8,7 @@ def validate_age(age_str: str) -> float:
         raise "Must be 18 or older"
     return age
 
-def validate_user(name: str, email: str, age_str: str) -> str:
+def validate_user(nname: str, email: str, age_str: str) -> str:
     if len(name) < 2:
         raise "Name must be at least 2 characters"
     if not email.contains("@"):
